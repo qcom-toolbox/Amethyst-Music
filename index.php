@@ -336,6 +336,11 @@ $I18N = [
     'sort_artist'             => ['fr' => 'Par Artiste',                    'en' => 'By artist'],
     'playlists_title'         => ['fr' => 'Tes Mixs',                       'en' => 'Your Mixes'],
     'albums_title'            => ['fr' => 'Albums',                         'en' => 'Albums'],
+    'grid_sort_name_asc'      => ['fr' => 'Nom (A-Z)',                      'en' => 'Name (A-Z)'],
+    'grid_sort_name_desc'     => ['fr' => 'Nom (Z-A)',                      'en' => 'Name (Z-A)'],
+    'grid_sort_recent'        => ['fr' => 'Plus récent',                    'en' => 'Most recent'],
+    'search_artist_ph'        => ['fr' => 'Rechercher un artiste…',         'en' => 'Search an artist…'],
+    'search_album_ph'         => ['fr' => 'Rechercher un album…',           'en' => 'Search an album…'],
     'no_albums_found'         => ['fr' => 'Aucun album pour le moment',     'en' => 'No albums yet'],
     'artists_title'           => ['fr' => 'Artistes',                       'en' => 'Artists'],
     'no_artists_found'        => ['fr' => 'Aucun artiste pour le moment',   'en' => 'No artists yet'],
@@ -357,6 +362,8 @@ $I18N = [
     'settings_theme_label'    => ['fr' => 'Thème :',                        'en' => 'Theme:'],
     'settings_hide_genres_pre'   => ['fr' => 'Genres à',                    'en' => 'Genres to'],
     'settings_hide_genres_word'  => ['fr' => 'masquer',                     'en' => 'hide'],
+    'settings_hide_admin_label'  => ['fr' => 'Masquer le Panel Admin de la navigation', 'en' => 'Hide Admin Panel from navigation'],
+    'settings_hide_edit_delete_label' => ['fr' => 'Masquer les boutons modifier/supprimer sur les pistes', 'en' => 'Hide edit/delete buttons on tracks'],
     'settings_open_eq'        => ['fr' => "🎚 Ouvrir l'égaliseur",          'en' => '🎚 Open equalizer'],
     'btn_close'               => ['fr' => 'Fermer',                         'en' => 'Close'],
     'eq_title'                => ['fr' => 'Égaliseur',                      'en' => 'Equalizer'],
@@ -930,6 +937,18 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .extended-color-item span { font-size:.85em; color:var(--text-muted); font-weight:500; }
         .extended-color-item input[type=color] { border:none; width:45px !important; height:35px !important; background:transparent; cursor:pointer; padding:0; border-radius:6px; margin:0; flex-shrink:0; }
 
+        .track-menu-btn { background:none; border:none; color:var(--text-muted); cursor:pointer; padding:6px 4px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .track-menu-btn:hover { background:rgba(128,128,128,.15); color:var(--text); }
+        .track-ctx-menu { position:fixed; z-index:2000; background:var(--bg-panel); border:1px solid var(--border-color); border-radius:12px; min-width:210px; max-width:260px; max-height:320px; overflow-y:auto; box-shadow:0 10px 30px rgba(0,0,0,.45); padding:6px; display:none; }
+        .track-ctx-menu.open { display:block; }
+        .track-menu-item { padding:10px 12px; border-radius:8px; cursor:pointer; font-size:.9em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .track-menu-item:hover { background:rgba(var(--primary-rgb),.15); }
+        .track-menu-item.disabled { opacity:.5; cursor:default; }
+        .track-menu-item.disabled:hover { background:none; }
+        .track-menu-item.danger { color:var(--danger); }
+        .track-menu-divider { height:1px; background:var(--border-color); margin:6px 4px; }
+        .track-menu-back { font-weight:600; color:var(--text-muted); }
+
         .song-select-container { max-height:300px; overflow-y:auto; margin-top:15px; border:1px solid var(--border-color); border-radius:16px; background:var(--input-bg); }
         .song-select-item { display:flex; align-items:center; padding:12px; border-bottom:1px solid rgba(255,255,255,.05); cursor:pointer; transition:.2s; }
         .song-select-item:hover { background:rgba(255,255,255,.05); }
@@ -1329,12 +1348,32 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 </main>
 
 <main id="albums" style="display:none;">
-    <h2 class="section-title" style="margin-bottom:25px;"><?php echo htmlspecialchars(t('albums_title')); ?></h2>
+    <div class="controls-container">
+        <h2 class="section-title" style="margin-bottom:0;"><?php echo htmlspecialchars(t('albums_title')); ?></h2>
+        <div class="search-row" style="width:auto;justify-content:flex-end;gap:12px;">
+            <input type="text" id="albumSearchInput" placeholder="<?php echo htmlspecialchars(t('search_album_ph')); ?>" style="width:200px;margin:0;padding:10px 18px;border-radius:50px;" oninput="renderAlbumsGrid()">
+            <select id="albumSortSelect" style="width:auto;margin:0;padding:10px 18px;border-radius:50px;" onchange="renderAlbumsGrid()">
+                <option value="name_asc" selected><?php echo htmlspecialchars(t('grid_sort_name_asc')); ?></option>
+                <option value="name_desc"><?php echo htmlspecialchars(t('grid_sort_name_desc')); ?></option>
+                <option value="recent"><?php echo htmlspecialchars(t('grid_sort_recent')); ?></option>
+            </select>
+        </div>
+    </div>
     <div class="cards-wrap" id="albums-grid"></div>
 </main>
 
 <main id="artists" style="display:none;">
-    <h2 class="section-title" style="margin-bottom:25px;"><?php echo htmlspecialchars(t('artists_title')); ?></h2>
+    <div class="controls-container">
+        <h2 class="section-title" style="margin-bottom:0;"><?php echo htmlspecialchars(t('artists_title')); ?></h2>
+        <div class="search-row" style="width:auto;justify-content:flex-end;gap:12px;">
+            <input type="text" id="artistSearchInput" placeholder="<?php echo htmlspecialchars(t('search_artist_ph')); ?>" style="width:200px;margin:0;padding:10px 18px;border-radius:50px;" oninput="renderArtistsGrid()">
+            <select id="artistSortSelect" style="width:auto;margin:0;padding:10px 18px;border-radius:50px;" onchange="renderArtistsGrid()">
+                <option value="name_asc" selected><?php echo htmlspecialchars(t('grid_sort_name_asc')); ?></option>
+                <option value="name_desc"><?php echo htmlspecialchars(t('grid_sort_name_desc')); ?></option>
+                <option value="recent"><?php echo htmlspecialchars(t('grid_sort_recent')); ?></option>
+            </select>
+        </div>
+    </div>
     <div class="cards-wrap" id="artists-grid"></div>
 </main>
 
@@ -1438,6 +1477,18 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             <?php endforeach; ?>
         </div>
 
+        <?php if ($is_admin): ?>
+        <label style="display:flex;align-items:center;gap:10px;margin-bottom:20px;cursor:pointer;">
+            <input type="checkbox" id="hideAdminPanelToggle" style="width:auto;margin:0;" onchange="toggleHideAdminPanel(this.checked)">
+            <?php echo htmlspecialchars(t('settings_hide_admin_label')); ?>
+        </label>
+        <?php endif; ?>
+
+        <label style="display:flex;align-items:center;gap:10px;margin-bottom:20px;cursor:pointer;">
+            <input type="checkbox" id="hideEditDeleteToggle" style="width:auto;margin:0;" onchange="toggleHideEditDeleteButtons(this.checked)">
+            <?php echo htmlspecialchars(t('settings_hide_edit_delete_label')); ?>
+        </label>
+
         <button class="btn btn-outline" style="width:100%;justify-content:center;margin-bottom:12px;" onclick="openModal('equalizerModal');renderEqSliders();"><?php echo htmlspecialchars(t('settings_open_eq')); ?></button>
         <a href="?logout=1" class="btn btn-outline" style="width:100%;justify-content:center;color:var(--text-muted);">
             <svg class="btn-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
@@ -1514,6 +1565,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         </div>
     </form>
 </div></div>
+
+<!-- Menu contextuel "⋮" partagé par toutes les lignes de piste (bibliothèque,
+     artiste, album, historique, playlist) : un seul élément repositionné et
+     re-rendu selon la piste cliquée, plutôt qu'un menu par ligne. -->
+<div id="track-ctx-menu" class="track-ctx-menu" role="menu"></div>
 
 <div id="playlistModal" class="modal"><div class="modal-content">
     <h2 id="modal-playlist-title" style="margin-top:0;"><?php echo htmlspecialchars(t('playlist_default_title')); ?></h2>
@@ -1681,6 +1737,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             no_albums_found: 'Aucun album pour le moment',
             no_artists_found: 'Aucun artiste pour le moment',
             history_empty: "Vous n'avez encore rien écouté.",
+            menu_add_to_queue: "Ajouter à la file d'attente",
+            menu_play_next: 'Lire ensuite',
+            menu_add_to_playlist: 'Ajouter à une playlist',
+            menu_back: 'Retour',
+            no_playlists_yet: 'Aucune playlist pour le moment',
+            track_menu_title: 'Options de la piste',
         },
         en: {
             err_api_unreachable: 'Unable to reach api.php.',
@@ -1732,6 +1794,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             no_albums_found: 'No albums yet',
             no_artists_found: 'No artists yet',
             history_empty: "You haven't listened to anything yet.",
+            menu_add_to_queue: 'Add to queue',
+            menu_play_next: 'Play next',
+            menu_add_to_playlist: 'Add to playlist',
+            menu_back: 'Back',
+            no_playlists_yet: 'No playlists yet',
+            track_menu_title: 'Track options',
         },
     };
     function t(key) { return (I18N_STRINGS[LANG] && I18N_STRINGS[LANG][key]) || I18N_STRINGS.fr[key] || key; }
@@ -1784,7 +1852,231 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     let originalQueue = []; let queue = []; let currentIndex = 0; let loopMode = 0; let isShuffle = false;
     let currentPlaylistId = null; let currentSection = 'accueil'; let currentArtistName = null; let currentAlbumId = null; let currentViewedPlaylist = null;
     let currentHistoryTracks = [];
+
+    // ── Moteur de file d'attente contextuelle ──────────────────────────────
+    // Une file dynamique/à continuation ne doit jamais sembler courte : on
+    // vise en permanence au moins ~150 morceaux à venir (comme un "Up Next"
+    // de service de streaming), remplis dès qu'on approche du bout plutôt que
+    // tout générer d'un coup. Sur une petite bibliothèque, buildContextualBatch
+    // renvoie simplement moins que demandé (elle ne peut pas inventer des
+    // morceaux) — usedTrackIds empêche alors toute redite au sein d'un lot.
+    const QUEUE_AHEAD_TARGET = 150;
+    const QUEUE_REFILL_THRESHOLD = 30;
+    // queueMode : 'library' (ordre/tri de la bibliothèque figé, jamais de
+    // recommandation) | 'fixed' (album/playlist/historique : liste explicite,
+    // éventuellement suivie d'une continuation dynamique pour les albums) |
+    // 'dynamic' (recherche/carrousel/artiste : file générée et complétée en continu).
+    let queueMode = 'library';
+    // Borne de bouclage pour le mode repeat-queue : le loop ne doit reboucler
+    // que sur la partie "contexte" (ex: les pistes de l'album), jamais sur la
+    // continuation générée ajoutée après. null = boucle sur la file entière.
+    let loopBoundary = null;
+    // Une playlist/historique est aussi en queueMode 'fixed' mais ne doit
+    // JAMAIS recevoir de continuation générée (contrairement à un album) —
+    // ce booléen est ce qui distingue les deux pour refillQueueIfNeeded(),
+    // queueMode seul ne suffisant pas à faire la différence.
+    let queueAllowsContinuation = false;
+    // Ids déjà placés dans la file dynamique en cours, pour ne pas retirer un
+    // morceau déjà proposé lors d'un remplissage incrémental suivant.
+    let usedTrackIds = new Set();
+    // Cache mémoire (par session) du profil d'affinité de l'utilisateur
+    // (genre/artiste/album), chargé une seule fois depuis action=user_affinity.
+    let userAffinityCache = null;
+    let userAffinityPromise = null;
+
+    async function getUserAffinity() {
+        if (userAffinityCache) return userAffinityCache;
+        if (!userAffinityPromise) {
+            userAffinityPromise = apiCall('user_affinity').then(data => {
+                userAffinityCache = {
+                    genre: (data && data.genre) || {},
+                    artist: (data && data.artist) || {},
+                    album: (data && data.album) || {},
+                };
+                return userAffinityCache;
+            }).catch(() => {
+                userAffinityCache = { genre: {}, artist: {}, album: {} };
+                return userAffinityCache;
+            });
+        }
+        return userAffinityPromise;
+    }
+
+    // Tirage aléatoire pondéré sans remise (méthode des clés exponentielles) :
+    // chaque item reçoit une clé -ln(rand())/poids, on garde les n plus
+    // petites clés. Un poids plus élevé augmente la probabilité de tirage
+    // sans jamais la garantir — remplace un tri par score classique.
+    function weightedSampleWithoutReplacement(items, weightFn, n) {
+        const keyed = items.map(item => {
+            const w = Math.max(weightFn(item), 0.0001);
+            const u = Math.max(Math.random(), 1e-9);
+            return { item, key: -Math.log(u) / w };
+        });
+        keyed.sort((a, b) => a.key - b.key);
+        return keyed.slice(0, n).map(k => k.item);
+    }
+
+    function scoreCandidate(track, seedTrack, affinity) {
+        let score = 1; // base pour que même un morceau sans aucun signal reste tirable
+        if (seedTrack) {
+            if (track.artist === seedTrack.artist) score += 30;
+            if ((track.genre || 'Autre') === (seedTrack.genre || 'Autre')) score += 12;
+            if (track.album_id != null && track.album_id === seedTrack.album_id) score += 8;
+        }
+        if (affinity) {
+            score += (affinity.genre[track.genre] || 0) * 3;
+            score += (affinity.artist[track.artist] || 0) * 5;
+            score += (affinity.album[track.album_id] || 0) * 4;
+        }
+        score += Math.log(1 + (parseInt(track.play_count) || 0)) * 1.2;
+        score += Math.random() * 6; // exploration aléatoire
+        return score;
+    }
+
+    // Fusionne les tranches par seau (même artiste / genre lié / découverte /
+    // aléatoire pur) en évitant de placer deux fois de suite le même artiste,
+    // et en évitant si possible l'artiste utilisé dans les 2-3 derniers choix.
+    function interleaveAvoidingRepeats(buckets, seedArtist) {
+        const pools = buckets.map(b => [...b]);
+        const result = [];
+        const recentArtists = seedArtist ? [seedArtist] : [];
+        let remaining = pools.reduce((n, p) => n + p.length, 0);
+        while (remaining > 0) {
+            let pickedPoolIdx = -1, pickedItemIdx = -1;
+            // 1ère passe : chercher un morceau d'un artiste absent des 3 derniers choix
+            for (let p = 0; p < pools.length && pickedPoolIdx === -1; p++) {
+                for (let i = 0; i < pools[p].length; i++) {
+                    if (!recentArtists.slice(-3).includes(pools[p][i].artist)) { pickedPoolIdx = p; pickedItemIdx = i; break; }
+                }
+            }
+            // 2ème passe (repli) : juste éviter l'artiste immédiatement précédent
+            if (pickedPoolIdx === -1) {
+                for (let p = 0; p < pools.length && pickedPoolIdx === -1; p++) {
+                    for (let i = 0; i < pools[p].length; i++) {
+                        if (pools[p][i].artist !== recentArtists[recentArtists.length - 1]) { pickedPoolIdx = p; pickedItemIdx = i; break; }
+                    }
+                }
+            }
+            // 3ème passe : plus aucune alternative, on prend ce qu'il reste
+            if (pickedPoolIdx === -1) {
+                for (let p = 0; p < pools.length; p++) { if (pools[p].length) { pickedPoolIdx = p; pickedItemIdx = 0; break; } }
+            }
+            const [track] = pools[pickedPoolIdx].splice(pickedItemIdx, 1);
+            result.push(track);
+            recentArtists.push(track.artist);
+            remaining--;
+        }
+        return result;
+    }
+
+    // Construit un lot de morceaux "pertinents mais surprenants" à partir de
+    // ALL_MUSIC_DATA, mélangeant plusieurs sources de candidats autour de
+    // seedTrack : ~30% même artiste, ~30% genre/goût lié, ~25% découverte
+    // (affinité personnelle + popularité, hors même artiste/genre), ~15%
+    // complètement aléatoire. Le tirage est pondéré (pas un tri déterministe),
+    // donc deux appels avec la même seed ne donnent jamais exactement la même file.
+    async function buildContextualBatch(seedTrack, excludeIds, count) {
+        const affinity = await getUserAffinity();
+        const pool = ALL_MUSIC_DATA.filter(t => !excludeIds.has(t.id) &&
+            (!hiddenGenres.length || !hiddenGenres.includes(t.genre || 'Autre')));
+        if (!pool.length) return [];
+
+        const sameArtist = seedTrack ? pool.filter(t => t.artist === seedTrack.artist) : [];
+        const sameArtistSet = new Set(sameArtist.map(t => t.id));
+        const related = seedTrack ? pool.filter(t => !sameArtistSet.has(t.id) && (t.genre || 'Autre') === (seedTrack.genre || 'Autre')) : [];
+        const relatedSet = new Set(related.map(t => t.id));
+        const discoveryBase = pool.filter(t => !sameArtistSet.has(t.id) && !relatedSet.has(t.id));
+        const rest = discoveryBase;
+
+        const quotas = {
+            sameArtist: Math.round(count * 0.30),
+            related:    Math.round(count * 0.30),
+            discovery:  Math.round(count * 0.25),
+            random:     Math.round(count * 0.15),
+        };
+
+        const pickSameArtist = weightedSampleWithoutReplacement(sameArtist, t => scoreCandidate(t, seedTrack, affinity), Math.min(quotas.sameArtist, sameArtist.length));
+        const pickRelated    = weightedSampleWithoutReplacement(related, t => scoreCandidate(t, seedTrack, affinity), Math.min(quotas.related, related.length));
+        const usedSoFar = new Set([...pickSameArtist, ...pickRelated].map(t => t.id));
+        const discoveryPool = discoveryBase.filter(t => !usedSoFar.has(t.id));
+        const pickDiscovery  = weightedSampleWithoutReplacement(discoveryPool, t => scoreCandidate(t, seedTrack, affinity), Math.min(quotas.discovery, discoveryPool.length));
+        pickDiscovery.forEach(t => usedSoFar.add(t.id));
+        const randomPool = rest.filter(t => !usedSoFar.has(t.id));
+        const pickRandom = weightedSampleWithoutReplacement(randomPool, () => 1, Math.min(quotas.random, randomPool.length));
+
+        // Si un seau est en sous-effectif (petite bibliothèque, artiste peu
+        // fourni...), on comble avec ce qu'il reste ailleurs plutôt que de
+        // renvoyer un lot plus court que demandé.
+        let chosen = [...pickSameArtist, ...pickRelated, ...pickDiscovery, ...pickRandom];
+        if (chosen.length < count) {
+            const chosenIds = new Set(chosen.map(t => t.id));
+            const filler = pool.filter(t => !chosenIds.has(t.id));
+            const need = count - chosen.length;
+            chosen = chosen.concat(weightedSampleWithoutReplacement(filler, t => scoreCandidate(t, seedTrack, affinity), Math.min(need, filler.length)));
+        }
+
+        return interleaveAvoidingRepeats([chosen], seedTrack ? seedTrack.artist : null);
+    }
+
+    // Réordonne une file existante (album/playlist/bibliothèque) façon
+    // "shuffle" tout en évitant les répétitions d'artiste consécutives :
+    // Fisher-Yates classique puis passe de réparation par échanges locaux.
+    function weightedAntiRepeatShuffle(list) {
+        const arr = shuffleArray([...list]);
+        for (let i = 1; i < arr.length; i++) {
+            if (arr[i].artist !== arr[i - 1].artist) continue;
+            for (let j = i + 1; j < arr.length; j++) {
+                if (arr[j].artist !== arr[i - 1].artist && arr[j].artist !== arr[i].artist) {
+                    [arr[i], arr[j]] = [arr[j], arr[i]];
+                    break;
+                }
+            }
+        }
+        return arr;
+    }
+
+    // Un seul verrou partagé entre le remplissage incrémental et la
+    // construction initiale d'une file dynamique/fixe+continuation
+    // (buildDynamicQueue / buildFixedQueueWithContinuation) : sans lui,
+    // loadTrack() déclenche refillQueueIfNeeded() dès que la file ne contient
+    // que le morceau seed (donc juste sous le seuil), en même temps que
+    // l'appel de construction initiale récupère lui aussi un lot — les deux
+    // partent alors du même usedTrackIds pas encore mis à jour et peuvent
+    // choisir les mêmes morceaux, d'où des doublons dans la file.
+    let queueBatchInFlight = false;
+    async function refillQueueIfNeeded() {
+        if (!queueAllowsContinuation || queueBatchInFlight) return;
+        const remaining = queue.length - 1 - currentIndex;
+        if (remaining > QUEUE_REFILL_THRESHOLD) return;
+        if (loopMode === 1 && loopBoundary != null) return; // on boucle sur le contexte, pas besoin de compléter
+        queueBatchInFlight = true;
+        try {
+            const lastTrack = queue[queue.length - 1];
+            // Complète jusqu'à retrouver ~QUEUE_AHEAD_TARGET morceaux à venir,
+            // pas juste un petit lot fixe, pour que la file ne semble jamais
+            // sur le point de s'arrêter.
+            const need = Math.max(QUEUE_AHEAD_TARGET - remaining, QUEUE_REFILL_THRESHOLD);
+            const batch = await buildContextualBatch(lastTrack, usedTrackIds, need);
+            if (!batch.length) return;
+            batch.forEach(t => usedTrackIds.add(t.id));
+            originalQueue = originalQueue.concat(batch);
+            queue = queue.concat(isShuffle ? weightedAntiRepeatShuffle(batch) : batch);
+            updateQueueUI();
+        } finally {
+            queueBatchInFlight = false;
+        }
+    }
     let hiddenGenres = JSON.parse(localStorage.getItem('hiddenGenres') || '[]');
+    // Préférence personnelle d'un admin pour alléger SA propre navigation —
+    // ne change rien côté serveur (is_admin reste la seule source d'autorité
+    // pour les actions admin), juste l'affichage de l'entrée dans SON menu.
+    let hideAdminPanel = (localStorage.getItem('hideAdminPanel') === '1');
+    // Préférence d'affichage générale (pas admin-only, contrairement à
+    // hideAdminPanel) : masque les boutons ✎/✕ sur TOUTES les pistes, y
+    // compris celles de l'utilisateur lui-même — pour une vue épurée en
+    // lecture seule. N'affecte que le rendu ; edit_track/delete_track côté
+    // serveur continuent de vérifier l'appartenance/is_admin indépendamment.
+    let hideEditDeleteButtons = (localStorage.getItem('hideEditDeleteButtons') === '1');
     let adaptiveThemeEnabled = (localStorage.getItem('theme_base') === 'adaptive');
     const adaptiveColorCache = new Map();
 
@@ -1919,6 +2211,40 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         renderHomeCarousels();
     }
 
+    // Affiche/masque l'entrée "Panel Admin" (nav desktop + barre mobile)
+    // selon la préférence enregistrée — l'accès direct par URL (?page=admin-page)
+    // reste possible : ceci allège juste la navigation, ce n'est pas un
+    // contrôle d'accès (is_admin côté serveur reste la seule autorité réelle).
+    function applyHideAdminPanel() {
+        document.querySelectorAll('.admin-nav-btn, #mob-nav-admin-page').forEach(el => {
+            el.style.display = hideAdminPanel ? 'none' : '';
+        });
+    }
+    function toggleHideAdminPanel(isChecked) {
+        hideAdminPanel = isChecked;
+        localStorage.setItem('hideAdminPanel', isChecked ? '1' : '0');
+        applyHideAdminPanel();
+        if (isChecked && currentSection === 'admin-page') showSection('accueil');
+        // Les boutons ✎/✕ (edit_track/delete_track) sur les pistes des autres
+        // dépendent aussi de hideAdminPanel (voir trackRowInnerHTML) : la liste
+        // principale est déjà rendue dans le DOM, il faut la reconstruire pour
+        // qu'ils apparaissent/disparaissent immédiatement sans recharger la
+        // page. Les autres pages (artiste/album/playlist/historique) relisent
+        // hideAdminPanel à chaque fois qu'on y navigue, pas besoin de les
+        // reconstruire ici puisqu'elles ne sont pas visibles en même temps
+        // que la page Paramètres.
+        filterAndSortTracks();
+    }
+
+    function toggleHideEditDeleteButtons(isChecked) {
+        hideEditDeleteButtons = isChecked;
+        localStorage.setItem('hideEditDeleteButtons', isChecked ? '1' : '0');
+        // Même remarque que toggleHideAdminPanel : seule la liste principale
+        // (déjà dans le DOM) a besoin d'être reconstruite ici, les autres
+        // pages relisent hideEditDeleteButtons à chaque navigation.
+        filterAndSortTracks();
+    }
+
     // Sépare une chaîne "artiste1, artiste2 & artiste3" (ou avec feat./ft./x/vs)
     // en noms d'artistes individuels, chacun pointant vers sa propre page.
     const ARTIST_SPLIT_REGEX = /\s*,\s*|\s*&amp;\s*|\s*&\s*|\s+feat\.?\s+|\s+ft\.?\s+|\s+featuring\s+|\s+vs\.?\s+|\s+x\s+|\s+and\s+|\s+et\s+/gi;
@@ -1952,6 +2278,201 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         return ` <span style="opacity:.6;">•</span> <span class="artist-link" onclick="event.stopPropagation();showAlbumPage(${parseInt(track.album_id)})">${escapeHTML(decoded)}</span>`;
     }
 
+    // ── Menu contextuel "⋮" (file d'attente / playlists) ───────────────────
+    // Un seul élément partagé (#track-ctx-menu, dans le HTML) plutôt qu'un
+    // menu par ligne : repositionné et re-rendu selon la piste sur laquelle
+    // on a cliqué (ctxMenuTrackId).
+    let ctxMenuTrackId = null;
+    let ctxMenuCanEditPlaylist = false;
+
+    function trackMenuButtonHTML(trackId, canEditPlaylist = false) {
+        return `<button class="track-menu-btn" onclick="event.stopPropagation();openTrackMenu(event,${trackId},${canEditPlaylist})" title="${t('track_menu_title')}" aria-label="${t('track_menu_title')}">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+        </button>`;
+    }
+
+    function openTrackMenu(evt, trackId, canEditPlaylist = false) {
+        evt.stopPropagation();
+        ctxMenuTrackId = Number(trackId);
+        ctxMenuCanEditPlaylist = !!canEditPlaylist;
+        renderTrackMenuMain();
+        document.getElementById('track-ctx-menu').classList.add('open');
+        positionTrackMenu(evt.currentTarget);
+    }
+
+    function closeTrackMenu() {
+        const menu = document.getElementById('track-ctx-menu');
+        menu.classList.remove('open');
+        menu.innerHTML = '';
+        ctxMenuTrackId = null;
+    }
+
+    // Position "fixed" ancrée au bouton cliqué, recalculée après rendu (on a
+    // besoin des dimensions réelles du menu) et repliée si elle déborderait
+    // du viewport plutôt que de couper le menu.
+    function positionTrackMenu(anchorEl) {
+        const menu = document.getElementById('track-ctx-menu');
+        const btnRect = anchorEl.getBoundingClientRect();
+        requestAnimationFrame(() => {
+            const rect = menu.getBoundingClientRect();
+            let left = btnRect.right - rect.width;
+            let top = btnRect.bottom + 4;
+            if (left < 8) left = 8;
+            if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
+            if (top + rect.height > window.innerHeight - 8) top = btnRect.top - rect.height - 4;
+            if (top < 8) top = 8;
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
+        });
+    }
+    // Recale seulement la position verticale après un changement de contenu
+    // (ex: passage au sous-menu "playlists", plus long que le menu principal),
+    // sans redemander la position du bouton d'origine (pas conservée).
+    function reclampTrackMenuVertical() {
+        const menu = document.getElementById('track-ctx-menu');
+        requestAnimationFrame(() => {
+            const rect = menu.getBoundingClientRect();
+            if (rect.bottom > window.innerHeight - 8) menu.style.top = Math.max(8, window.innerHeight - rect.height - 8) + 'px';
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        const menu = document.getElementById('track-ctx-menu');
+        if (menu.classList.contains('open') && !menu.contains(e.target) && !e.target.closest('.track-menu-btn')) closeTrackMenu();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTrackMenu(); });
+    // Un menu positionné en `fixed` sur son bouton se désynchronise dès que
+    // la liste défile en dessous : plus simple et plus sûr de le refermer.
+    window.addEventListener('scroll', () => closeTrackMenu(), true);
+
+    function renderTrackMenuMain() {
+        const menu = document.getElementById('track-ctx-menu');
+        // event.stopPropagation() est indispensable ici : le clic remplace le
+        // contenu du menu (innerHTML) AVANT de remonter jusqu'au listener
+        // document qui ferme le menu au clic extérieur — sans l'arrêter, ce
+        // listener reçoit un e.target déjà détaché du DOM (donc pas "contenu"
+        // dans le menu à ses yeux) et referme le menu à l'instant où il vient
+        // de changer de contenu.
+        const removeItem = ctxMenuCanEditPlaylist
+            ? `<div class="track-menu-divider"></div><div class="track-menu-item danger" onclick="event.stopPropagation();menuRemoveFromPlaylist()">${t('remove_from_playlist')}</div>`
+            : '';
+        menu.innerHTML = `
+            <div class="track-menu-item" onclick="event.stopPropagation();menuAddToQueueEnd()">${t('menu_add_to_queue')}</div>
+            <div class="track-menu-item" onclick="event.stopPropagation();menuPlayNext()">${t('menu_play_next')}</div>
+            <div class="track-menu-item" onclick="event.stopPropagation();renderTrackMenuPlaylists()">${t('menu_add_to_playlist')}</div>
+            ${removeItem}`;
+    }
+
+    // Sous-panneau "Ajouter à une playlist" : liste les playlists modifiables
+    // par l'utilisateur (siennes, ou toutes si admin — même règle que
+    // playlist_mod côté serveur), avec une coche sur celles qui contiennent
+    // déjà cette piste (non cliquables : playlist_mod 'add' est idempotent
+    // côté serveur mais autant éviter l'appel réseau inutile).
+    function renderTrackMenuPlaylists() {
+        const menu = document.getElementById('track-ctx-menu');
+        const eligible = ALL_PLAYLISTS.filter(p => p.creator_id == CURRENT_USER_ID || IS_ADMIN);
+        const rows = eligible.map(p => {
+            const already = String(p.song_ids || '').split(',').filter(Boolean).map(Number).includes(ctxMenuTrackId);
+            return `<div class="track-menu-item${already ? ' disabled' : ''}" ${already ? '' : `onclick="event.stopPropagation();menuAddToExistingPlaylist(${p.id})"`}>${escapeHTML(fixEntities(p.name))}${already ? ' ✓' : ''}</div>`;
+        }).join('') || `<div class="track-menu-item disabled">${t('no_playlists_yet')}</div>`;
+        menu.innerHTML = `
+            <div class="track-menu-item track-menu-back" onclick="event.stopPropagation();renderTrackMenuMain()">‹ ${t('menu_back')}</div>
+            <div class="track-menu-divider"></div>
+            <div class="track-menu-item" onclick="event.stopPropagation();menuCreatePlaylistWithTrack()">+ ${t('new_playlist')}</div>
+            <div class="track-menu-divider"></div>
+            ${rows}`;
+        reclampTrackMenuVertical();
+    }
+
+    function menuAddToQueueEnd() { addTrackToQueueEnd(ctxMenuTrackId); closeTrackMenu(); }
+    function menuPlayNext() { addTrackToQueuePlayNext(ctxMenuTrackId); closeTrackMenu(); }
+
+    async function menuAddToExistingPlaylist(playlistId) {
+        const trackId = ctxMenuTrackId;
+        const res = await apiCall('playlist_mod', { playlist_id: playlistId, mode: 'add', track_id: trackId });
+        if (res.status === 'success') {
+            const p = ALL_PLAYLISTS.find(pl => pl.id == playlistId);
+            if (p) {
+                const ids = String(p.song_ids || '').split(',').filter(Boolean).map(Number);
+                if (!ids.includes(trackId)) ids.push(trackId);
+                p.song_ids = ids.join(',');
+                if (currentViewedPlaylist && currentViewedPlaylist.id == playlistId) {
+                    currentViewedPlaylist.song_ids = p.song_ids;
+                    renderPlaylistPageContent();
+                }
+            }
+        } else alert(res.message || t('err_generic'));
+        closeTrackMenu();
+    }
+
+    // Réutilise la modale de création de playlist existante (sélection
+    // multiple de pistes) plutôt que d'en construire une dédiée : on l'ouvre
+    // et on pré-coche simplement la piste d'où vient le menu.
+    function menuCreatePlaylistWithTrack() {
+        const trackId = ctxMenuTrackId;
+        closeTrackMenu();
+        openCreateModal();
+        const cb = document.querySelector(`.song-cb[data-id="${trackId}"]`);
+        if (cb) {
+            cb.checked = true;
+            cb.closest('.song-select-item')?.classList.add('selected');
+            updateSelectedCount();
+        }
+    }
+
+    function menuRemoveFromPlaylist() {
+        const trackId = ctxMenuTrackId;
+        closeTrackMenu();
+        removeFromPlaylist(trackId);
+    }
+
+    // ── Mutations directes de la file en cours, indépendantes du contexte
+    // qui l'a construite (recherche/bibliothèque/album...). `queue` (ordre de
+    // lecture réel) et `originalQueue` (référence canonique utilisée par
+    // toggleShuffle/refillQueueIfNeeded) sont maintenues synchronisées : sans
+    // ça, un morceau ajouté manuellement disparaîtrait au prochain
+    // (dé)mélange, `toggleShuffle` ne conservant que les ids présents dans
+    // `originalQueue`.
+    // Retire les occurrences déjà présentes plus loin dans la file (upcoming
+    // uniquement, jamais l'historique déjà jouée ni la piste en cours) avant
+    // réinsertion : sans ça, "Lire ensuite"/"Ajouter à la file" sur un
+    // morceau déjà programmé plus loin le dupliquerait, et laisserait
+    // originalQueue avec deux occurrences alors que `queue` n'en a qu'une —
+    // désynchronisation qui refait surface (doublon ou perte) au prochain
+    // (dé)mélange, toggleShuffle ne faisant que filtrer originalQueue par id.
+    function removeFromUpcomingQueue(trackId) {
+        const curId = queue[currentIndex] ? queue[currentIndex].id : null;
+        if (trackId === curId) return;
+        for (let i = queue.length - 1; i > currentIndex; i--) {
+            if (queue[i].id === trackId) queue.splice(i, 1);
+        }
+        for (let i = originalQueue.length - 1; i >= 0; i--) {
+            if (originalQueue[i].id === trackId) originalQueue.splice(i, 1);
+        }
+    }
+    function addTrackToQueueEnd(trackId) {
+        const track = ALL_MUSIC_DATA.find(tr => tr.id === Number(trackId));
+        if (!track) return;
+        if (!queue.length) { buildFixedQueueNoContinuation([track], { startId: track.id, autoPlay: true }); return; }
+        removeFromUpcomingQueue(track.id);
+        queue.push(track);
+        originalQueue.push(track);
+        usedTrackIds.add(track.id);
+        updateQueueUI();
+    }
+    function addTrackToQueuePlayNext(trackId) {
+        const track = ALL_MUSIC_DATA.find(tr => tr.id === Number(trackId));
+        if (!track) return;
+        if (!queue.length) { buildFixedQueueNoContinuation([track], { startId: track.id, autoPlay: true }); return; }
+        removeFromUpcomingQueue(track.id);
+        queue.splice(currentIndex + 1, 0, track);
+        const curId = queue[currentIndex] ? queue[currentIndex].id : null;
+        const origIdx = originalQueue.findIndex(tr => tr.id === curId);
+        originalQueue.splice(origIdx === -1 ? originalQueue.length : origIdx + 1, 0, track);
+        usedTrackIds.add(track.id);
+        updateQueueUI();
+    }
+
     function trackRowInnerHTML(t, idx, context = null) {
         const safeTitle  = escapeHTML(fixEntities(t.title));
         const artistHTML = artistLinksHTML(t.artist);
@@ -1968,7 +2489,14 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         const jsGenre    = jsAttrEscape(rawGenre);
         const jsAlbum    = jsAttrEscape(fixEntities(t.album || ''));
         let editButtons  = '';
-        if (t.uploader_id == CURRENT_USER_ID || IS_ADMIN) {
+        // hideEditDeleteButtons masque ✎/✕ pour tout le monde, même sur ses
+        // propres pistes (vue épurée en lecture seule) ; hideAdminPanel ne
+        // masque que le passe-droit admin sur les pistes des AUTRES — un admin
+        // qui l'a coché veut arrêter de voir ces contrôles sur ce qu'il n'a
+        // pas uploadé lui-même, sans perdre l'édition de son propre upload.
+        // Dans les deux cas, rien ne change côté serveur : delete_track/
+        // edit_track y revérifient toujours l'appartenance/is_admin indépendamment.
+        if (!hideEditDeleteButtons && (t.uploader_id == CURRENT_USER_ID || (IS_ADMIN && !hideAdminPanel))) {
             editButtons = `
                 <button class="btn btn-outline" style="font-size:.7em;padding:6px 10px;border-radius:8px;" onclick="openEditTrackModal(${t.id},'${jsTitle}','${jsArtist}','${jsGenre}','${jsAlbum}')">✎</button>
                 <button class="btn btn-danger" style="border-radius:8px;" onclick="deleteTrack(${t.id})">✕</button>`;
@@ -1990,7 +2518,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                     ${artistHTML}${albumHTML} <span style="opacity:.6;font-size:.9em;">• ${displayGenre} • ▶ ${t.play_count||0}</span>
                 </div>
             </div>
-            <div style="display:flex;gap:8px;">${editButtons}</div>`;
+            <div style="display:flex;gap:4px;align-items:center;">${editButtons}${trackMenuButtonHTML(t.id)}</div>`;
     }
 
     function renderTracksChunk() {
@@ -2109,7 +2637,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         const playlist = ALL_PLAYLISTS.find(p => parseInt(p.id) === id);
         if (!playlist) { showSection('playlists', doUrl); return; }
         currentViewedPlaylist = playlist;
-        currentPlaylistCanEdit = playlist.creator_id == CURRENT_USER_ID || IS_ADMIN;
+        currentPlaylistCanEdit = playlist.creator_id == CURRENT_USER_ID || (IS_ADMIN && !hideAdminPanel);
         playlistEditMode = false;
         renderPlaylistPageContent();
         showSection('playlist-page', doUrl);
@@ -2312,7 +2840,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                 <div style="font-weight:700;font-size:1.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;">${safeTitle}</div>
                 <div style="font-size:.85em;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${artistHTML}${albumHTML}</div>
             </div>
-            ${actions}`;
+            ${actions}
+            ${trackMenuButtonHTML(tr.id, currentPlaylistCanEdit)}`;
     }
 
     // ── Glisser-déposer natif (souris) : réordonne le DOM en direct pendant
@@ -2546,11 +3075,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                 <div class="cc-artist-skeleton"></div>
             </div>`).join('');
         }
-        // playTrackFromIds (pas playTrackById) : un carrousel (populaire, pépites
-        // cachées, recommandé...) est un sous-ensemble/ordre qui n'a souvent rien
-        // à voir avec CURRENT_VIEW_DATA (liste principale triée/recherchée) — il
-        // faut donc construire la file à partir de CETTE liste précise, comme le
-        // fait déjà playTrackFromList() pour les pages artiste/album/playlist.
+        // playTrackFromIds (pas playTrackById) : un clic sur un carrousel
+        // (populaire, pépites cachées, recommandé...) doit démarrer une file
+        // contextuelle dynamique seedée sur CE morceau précis (voir
+        // buildDynamicQueue), pas rejouer CURRENT_VIEW_DATA (liste principale
+        // triée/recherchée) qui n'a souvent rien à voir avec ce carrousel.
         const idsAttr = tracks.map(tr => tr.id).join(',');
         return tracks.map(t => {
             const safeTitle  = escapeHTML(fixEntities(t.title));
@@ -2681,6 +3210,17 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
     // ── Grille "Albums" : un album par album_id distinct, dérivé de
     // ALL_MUSIC_DATA (comme les pages artiste/album) — pas d'appel API séparé.
+    // Tri partagé grilles Albums/Artistes : 'name_asc' (défaut, comportement
+    // historique inchangé), 'name_desc', ou 'recent' (approximé par l'id de
+    // piste le plus élevé de l'album/artiste — aucune date d'ajout n'est
+    // exposée côté client, mais l'id est attribué en ordre d'upload donc sert
+    // de proxy fiable de récence).
+    function sortGridEntries(items, sortMode) {
+        if (sortMode === 'name_desc') return items.sort((a, b) => b.sortName.localeCompare(a.sortName));
+        if (sortMode === 'recent')    return items.sort((a, b) => b.latestId - a.latestId);
+        return items.sort((a, b) => a.sortName.localeCompare(b.sortName));
+    }
+
     function renderAlbumsGrid() {
         const container = document.getElementById('albums-grid');
         if (!container) return;
@@ -2689,9 +3229,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         ALL_MUSIC_DATA.forEach(tr => {
             if (!tr.album_id) return;
             const id = parseInt(tr.album_id);
-            if (!albumsMap.has(id)) albumsMap.set(id, { id, name: tr.album, count: 0, artists: new Map() });
+            if (!albumsMap.has(id)) albumsMap.set(id, { id, name: tr.album, sortName: fixEntities(tr.album), count: 0, latestId: tr.id, artists: new Map() });
             const entry = albumsMap.get(id);
             entry.count++;
+            if (tr.id > entry.latestId) entry.latestId = tr.id;
             splitArtistNames(fixEntities(tr.artist)).forEach(n => {
                 const key = n.toLowerCase();
                 if (!entry.artists.has(key)) entry.artists.set(key, n);
@@ -2703,7 +3244,18 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             return;
         }
 
-        const albums = [...albumsMap.values()].sort((a, b) => fixEntities(a.name).localeCompare(fixEntities(b.name)));
+        const searchEl = document.getElementById('albumSearchInput');
+        const sortEl   = document.getElementById('albumSortSelect');
+        const term     = searchEl ? searchEl.value.trim().toLowerCase() : '';
+        const sortMode = sortEl ? sortEl.value : 'name_asc';
+
+        let albums = [...albumsMap.values()];
+        if (term) albums = albums.filter(a => a.sortName.toLowerCase().includes(term));
+        albums = sortGridEntries(albums, sortMode);
+        if (!albums.length) {
+            container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-muted);">${t('no_albums_found')}</div>`;
+            return;
+        }
         container.innerHTML = albums.map(a => {
             const safeName   = escapeHTML(fixEntities(a.name));
             const artistHTML = [...a.artists.values()]
@@ -2730,7 +3282,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         ALL_MUSIC_DATA.forEach(tr => {
             splitArtistNames(fixEntities(tr.artist)).forEach(n => {
                 const key = n.toLowerCase();
-                if (!artistsMap.has(key)) artistsMap.set(key, { name: n, count: 0, cover: tr.cover_url, latestId: tr.id });
+                if (!artistsMap.has(key)) artistsMap.set(key, { name: n, sortName: n, count: 0, cover: tr.cover_url, latestId: tr.id });
                 const entry = artistsMap.get(key);
                 entry.count++;
                 if (tr.id > entry.latestId) { entry.latestId = tr.id; entry.cover = tr.cover_url; }
@@ -2742,7 +3294,18 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             return;
         }
 
-        const artists = [...artistsMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+        const searchEl = document.getElementById('artistSearchInput');
+        const sortEl   = document.getElementById('artistSortSelect');
+        const term     = searchEl ? searchEl.value.trim().toLowerCase() : '';
+        const sortMode = sortEl ? sortEl.value : 'name_asc';
+
+        let artists = [...artistsMap.values()];
+        if (term) artists = artists.filter(a => a.name.toLowerCase().includes(term));
+        artists = sortGridEntries(artists, sortMode);
+        if (!artists.length) {
+            container.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-muted);">${t('no_artists_found')}</div>`;
+            return;
+        }
         container.innerHTML = artists.map(a => {
             const safeName = escapeHTML(a.name);
             return `<div class="carousel-card artist-card" onclick="showArtistPage('${jsAttrEscape(a.name)}')">
@@ -2762,6 +3325,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         document.querySelectorAll('.genre-filter-cb').forEach(cb => {
             if (hiddenGenres.includes(cb.dataset.genre)) cb.checked = true;
         });
+        const hideAdminCb = document.getElementById('hideAdminPanelToggle');
+        if (hideAdminCb) hideAdminCb.checked = hideAdminPanel;
+        applyHideAdminPanel();
+        const hideEditDeleteCb = document.getElementById('hideEditDeleteToggle');
+        if (hideEditDeleteCb) hideEditDeleteCb.checked = hideEditDeleteButtons;
         _observer.observe(document.getElementById('load-more-trigger'));
         filterAndSortTracks();
         renderGenrePillsCarousel();
@@ -2853,106 +3421,108 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         });
     }
 
+    // ── Bibliothèque : clic sur un morceau sans recherche active → la file
+    // est exactement CURRENT_VIEW_DATA (tri/filtre en cours), figée telle
+    // quelle et tournée pour démarrer sur le morceau cliqué ; rien n'est
+    // ajouté après. Recherche active → la pertinence de "coller au terme
+    // tapé" prime moins que le fait d'écouter LE morceau choisi : on démarre
+    // une file contextuelle dynamique dessus (voir buildDynamicQueue),
+    // exactement comme un clic sur un morceau depuis un carrousel/artiste.
     function playTrackById(id, autoPlay = true) {
-        // Toujours reconstruire une file neuve à partir de CURRENT_VIEW_DATA,
-        // même si une playlist est en cours de lecture : ce handler est celui
-        // de la liste principale/des carrousels, pas celui de la page playlist
-        // (playTrackInPlaylist) — réutiliser l'ancienne file par simple
-        // recherche d'id (comme avant) rejouait à tort dans la file de la
-        // playlist encore active dès que le morceau cliqué ailleurs s'y
-        // trouvait aussi, au lieu de démarrer une file propre à cette liste.
+        const term = document.getElementById('searchInput').value.trim();
+        if (term) {
+            const seed = CURRENT_VIEW_DATA.find(t => t.id == id) || ALL_MUSIC_DATA.find(t => t.id == id);
+            if (seed) { buildDynamicQueue(seed, autoPlay); return; }
+        }
         currentPlaylistId = null;
-        // La file doit démarrer sur le morceau cliqué : on fait tourner
-        // CURRENT_VIEW_DATA (qui peut être triée par popularité, date...)
-        // pour que les morceaux précédant celui cliqué passent à la fin
-        // au lieu de s'afficher avant lui dans la file d'attente.
+        queueMode = 'library';
+        loopBoundary = null;
+        queueAllowsContinuation = false;
         const startIdx = CURRENT_VIEW_DATA.findIndex(t => t.id == id);
         originalQueue = startIdx > 0
             ? [...CURRENT_VIEW_DATA.slice(startIdx), ...CURRENT_VIEW_DATA.slice(0, startIdx)]
             : [...CURRENT_VIEW_DATA];
-        queue = isShuffle ? shuffleArray([...originalQueue]) : [...originalQueue];
+        queue = isShuffle ? weightedAntiRepeatShuffle(originalQueue) : [...originalQueue];
         currentIndex = isShuffle ? queue.findIndex(t => t.id == id) : 0;
         if (currentIndex === -1) currentIndex = 0;
         loadTrack(autoPlay);
     }
 
-    // ── Construit la file d'attente à partir d'une liste explicite (page
-    // artiste/album/playlist) au lieu de CURRENT_VIEW_DATA, qui peut être une
-    // toute autre liste (ex: des résultats de recherche) quand on clique sur
-    // un morceau depuis une page qui n'est pas la bibliothèque principale.
-    // Complète avec le reste de la bibliothèque mélangé, comme playAlbum/
-    // playArtist, pour que la lecture continue après le dernier morceau.
-    function playTrackFromList(id, list, autoPlay = true) {
-        if (!list.length) return;
-        const usedIds = new Set(list.map(tr => tr.id));
-        let rest = ALL_MUSIC_DATA.filter(tr => !usedIds.has(tr.id));
-        if (hiddenGenres.length) rest = rest.filter(tr => !hiddenGenres.includes(tr.genre || 'Autre'));
-        const continuation = shuffleArray([...rest]);
-
-        // Comme playTrackById() : la file doit démarrer sur le morceau cliqué,
-        // pas sur le début de `list' — sans quoi les morceaux qui le précèdent
-        // dans `list' (ex: pistes précédentes de l'album/artiste/carrousel)
-        // s'afficheraient à tort avant lui dans la file d'attente.
-        const startIdx = list.findIndex(t => t.id == id);
-        const rotatedList = startIdx > 0 ? [...list.slice(startIdx), ...list.slice(0, startIdx)] : list;
-
+    // ── File contextuelle "DJ" : démarre sur seedTrack (lecture immédiate),
+    // puis complète en tâche de fond avec un lot mélangeant même artiste/
+    // genre lié/découverte/aléatoire (buildContextualBatch). Utilisée pour
+    // toute lecture dont le point de départ est UN morceau précis plutôt
+    // qu'une liste explicite à respecter (recherche, carrousels, artiste).
+    async function buildDynamicQueue(seedTrack, autoPlay = true) {
         currentPlaylistId = null;
-        originalQueue = [...rotatedList, ...continuation];
-        queue = isShuffle ? shuffleArray([...originalQueue]) : [...originalQueue];
-        currentIndex = isShuffle ? queue.findIndex(t => t.id == id) : 0;
-        if (currentIndex === -1) currentIndex = 0;
+        queueMode = 'dynamic';
+        loopBoundary = null;
+        queueAllowsContinuation = true;
+        usedTrackIds = new Set([seedTrack.id]);
+        originalQueue = [seedTrack];
+        queue = [seedTrack];
+        currentIndex = 0;
+        // loadTrack() déclenche refillQueueIfNeeded() (la file ne contient que
+        // le seed, donc sous le seuil) : le verrou ci-dessous l'empêche de
+        // tourner en même temps que le lot initial ci-dessous et de piocher
+        // les mêmes morceaux (doublons).
+        queueBatchInFlight = true;
         loadTrack(autoPlay);
+
+        const batch = await buildContextualBatch(seedTrack, usedTrackIds, QUEUE_AHEAD_TARGET);
+        queueBatchInFlight = false;
+        if (!batch.length) return;
+        batch.forEach(tr => usedTrackIds.add(tr.id));
+        originalQueue = originalQueue.concat(batch);
+        queue = queue.concat(isShuffle ? weightedAntiRepeatShuffle(batch) : batch);
+        updateQueueUI();
     }
 
-    // Variante de playTrackFromList() pour les carrousels (populaire, pépites
-    // cachées, recommandé...) : leurs cartes ne portent que des ids dans leur
-    // attribut onclick (pas les objets pistes complets), donc on les résout
-    // depuis ALL_MUSIC_DATA avant de déléguer à playTrackFromList().
+    // Variante pour les carrousels (populaire, pépites cachées, recommandé...) :
+    // leurs cartes ne portent que des ids dans leur attribut onclick (pas les
+    // objets pistes complets), donc on les résout depuis ALL_MUSIC_DATA.
     function playTrackFromIds(id, idsStr) {
-        const ids = idsStr.split(',').map(Number);
-        const list = ids.map(tid => ALL_MUSIC_DATA.find(t => t.id === tid)).filter(Boolean);
-        playTrackFromList(id, list);
+        const seed = ALL_MUSIC_DATA.find(t => t.id === Number(id));
+        if (seed) buildDynamicQueue(seed, true);
     }
 
+    // ── Page artiste : d'abord les autres morceaux de CET artiste (dans
+    // l'ordre où ils sont affichés sur sa page, comme playTrackInAlbum),
+    // puis une continuation contextuelle générée une fois son catalogue
+    // épuisé — plutôt qu'un mélange "radio" qui aurait pu faire apparaître
+    // un autre artiste dès le 2e morceau.
     function playTrackInArtist(id) {
         if (!currentArtistName) { playTrackById(id); return; }
         const norm = currentArtistName.trim().toLowerCase();
         const tracks = ALL_MUSIC_DATA.filter(tr => splitArtistNames(fixEntities(tr.artist)).some(n => n.toLowerCase() === norm));
-        playTrackFromList(id, tracks);
+        buildFixedQueueWithContinuation(tracks, { startId: id, autoPlay: true });
     }
 
     function playTrackInAlbum(id) {
         if (currentAlbumId == null) { playTrackById(id); return; }
         const tracks = ALL_MUSIC_DATA.filter(tr => parseInt(tr.album_id) === currentAlbumId).sort((a, b) => a.id - b.id);
-        playTrackFromList(id, tracks);
+        buildFixedQueueWithContinuation(tracks, { startId: id, autoPlay: true });
     }
 
     // ── Page historique : la liste n'est pas dérivable de ALL_MUSIC_DATA
     // (ordre chronologique propre à l'utilisateur), donc on rejoue depuis la
-    // liste mise en cache par showHistoryPage().
+    // liste mise en cache par showHistoryPage(). Pas de continuation générée :
+    // c'est une consultation d'historique, pas un point de départ de "radio".
     function playTrackInHistory(id) {
         if (!currentHistoryTracks.length) { playTrackById(id); return; }
-        playTrackFromList(id, currentHistoryTracks);
+        buildFixedQueueNoContinuation(currentHistoryTracks, { startId: id, autoPlay: true });
     }
 
-    // ── Contrairement à playTrackFromList (artiste/album), une playlist ne se
-    // complète pas avec le reste de la bibliothèque : ses morceaux sont la
-    // file entière, comme le fait déjà playPlaylist() via le bouton "Écouter".
+    // ── Une playlist ne se complète jamais avec une continuation générée :
+    // ses morceaux sont la file entière, du début à la fin (ou en boucle sur
+    // elle-même si le mode repeat est actif) — jamais de recommandations
+    // ajoutées après son dernier morceau.
     function playTrackInPlaylist(id) {
         if (!currentViewedPlaylist) { playTrackById(id); return; }
         const idList = String(currentViewedPlaylist.song_ids).split(',').map(Number).filter(Boolean);
         const tracks = idList.map(tid => ALL_MUSIC_DATA.find(t => t.id === tid)).filter(Boolean);
         if (!tracks.length) return;
-        // Comme playTrackById()/playTrackFromList() : démarrer sur le morceau
-        // cliqué plutôt que sur le début de la playlist.
-        const startIdx = tracks.findIndex(t => t.id == id);
-        const rotatedTracks = startIdx > 0 ? [...tracks.slice(startIdx), ...tracks.slice(0, startIdx)] : tracks;
-        currentPlaylistId = currentViewedPlaylist.id;
-        originalQueue = [...rotatedTracks];
-        queue = isShuffle ? shuffleArray([...originalQueue]) : [...originalQueue];
-        currentIndex = isShuffle ? queue.findIndex(t => t.id == id) : 0;
-        if (currentIndex === -1) currentIndex = 0;
-        loadTrack(true);
+        buildFixedQueueNoContinuation(tracks, { startId: id, autoPlay: true, playlistId: currentViewedPlaylist.id });
     }
 
     async function playPlaylist(ids, pId = null, forceShuffle = null) {
@@ -2965,65 +3535,107 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             document.getElementById('shuffleBtn').classList.toggle('active', isShuffle);
             document.getElementById('fp-shuffleBtn').classList.toggle('active', isShuffle);
         }
-        currentPlaylistId = pId; originalQueue = [...data];
-        queue = isShuffle ? shuffleArray([...data]) : [...data];
-        currentIndex = 0; loadTrack(true);
+        buildFixedQueueNoContinuation(data, { autoPlay: true, playlistId: pId });
     }
 
-    // ── Lecture d'un album (en ordre ou mélangé) : la file d'attente est
-    // complétée avec le reste de la bibliothèque (mélangé) à la suite de
-    // l'album, pour que la musique continue au lieu de s'arrêter une fois
-    // le dernier morceau de l'album terminé.
+    // Construit une file "fixe" (ordre d'une liste explicite : playlist ou
+    // historique) sans jamais y ajouter de continuation générée. `startId`
+    // absent = on démarre à l'index 0 de la file (éventuellement mélangée),
+    // comme le bouton "Lecture" d'une playlist ; présent = on démarre/rejoint
+    // exactement ce morceau, comme un clic sur une piste précise.
+    function buildFixedQueueNoContinuation(tracks, opts = {}) {
+        const { startId = null, autoPlay = true, playlistId = null } = opts;
+        if (!tracks.length) return;
+        let rotated = tracks;
+        if (startId != null) {
+            const startIdx = tracks.findIndex(t => t.id == startId);
+            rotated = startIdx > 0 ? [...tracks.slice(startIdx), ...tracks.slice(0, startIdx)] : tracks;
+        }
+        currentPlaylistId = playlistId;
+        queueMode = 'fixed';
+        loopBoundary = null;
+        queueAllowsContinuation = false;
+        usedTrackIds = new Set(rotated.map(t => t.id));
+        originalQueue = [...rotated];
+        queue = isShuffle ? weightedAntiRepeatShuffle(originalQueue) : [...originalQueue];
+        if (startId != null) {
+            currentIndex = isShuffle ? queue.findIndex(t => t.id == startId) : 0;
+            if (currentIndex === -1) currentIndex = 0;
+        } else {
+            currentIndex = 0;
+        }
+        loadTrack(autoPlay);
+    }
+
+    // ── Lecture d'un album : la file est le contenu exact de l'album (en
+    // ordre ou mélangé entre eux), suivie d'une continuation contextuelle
+    // générée (buildContextualBatch, seedée sur le dernier morceau de
+    // l'album) pour que la musique continue au lieu de s'arrêter. Le mode
+    // repeat-queue ne boucle que sur les pistes de l'album (loopBoundary),
+    // jamais sur la continuation — voir nextTrack().
+    async function buildFixedQueueWithContinuation(contextTracks, opts = {}) {
+        const { startId = null, autoPlay = true } = opts;
+        if (!contextTracks.length) return;
+        let rotated = contextTracks;
+        if (startId != null) {
+            const startIdx = contextTracks.findIndex(t => t.id == startId);
+            rotated = startIdx > 0 ? [...contextTracks.slice(startIdx), ...contextTracks.slice(0, startIdx)] : contextTracks;
+        }
+        currentPlaylistId = null;
+        queueMode = 'fixed';
+        loopBoundary = rotated.length;
+        queueAllowsContinuation = true;
+        usedTrackIds = new Set(rotated.map(t => t.id));
+        originalQueue = [...rotated];
+        queue = isShuffle ? weightedAntiRepeatShuffle(originalQueue) : [...originalQueue];
+        if (startId != null) {
+            currentIndex = isShuffle ? queue.findIndex(t => t.id == startId) : 0;
+            if (currentIndex === -1) currentIndex = 0;
+        } else {
+            currentIndex = 0;
+        }
+        // Cf. buildDynamicQueue : empêche refillQueueIfNeeded (déclenché par
+        // loadTrack) de tourner en parallèle du lot de continuation ci-dessous.
+        queueBatchInFlight = true;
+        loadTrack(autoPlay);
+
+        const seed = rotated[rotated.length - 1];
+        const batch = await buildContextualBatch(seed, usedTrackIds, QUEUE_AHEAD_TARGET);
+        queueBatchInFlight = false;
+        if (!batch.length) return;
+        batch.forEach(tr => usedTrackIds.add(tr.id));
+        originalQueue = originalQueue.concat(batch);
+        queue = queue.concat(isShuffle ? weightedAntiRepeatShuffle(batch) : batch);
+        updateQueueUI();
+    }
+
     function playAlbum(albumId, forceShuffle = null) {
         albumId = parseInt(albumId);
-        let albumTracks = ALL_MUSIC_DATA.filter(tr => parseInt(tr.album_id) === albumId).sort((a, b) => a.id - b.id);
+        const albumTracks = ALL_MUSIC_DATA.filter(tr => parseInt(tr.album_id) === albumId).sort((a, b) => a.id - b.id);
         if (!albumTracks.length) return;
         if (forceShuffle !== null) {
             isShuffle = forceShuffle;
             document.getElementById('shuffleBtn').classList.toggle('active', isShuffle);
             document.getElementById('fp-shuffleBtn').classList.toggle('active', isShuffle);
         }
-        if (isShuffle) albumTracks = shuffleArray([...albumTracks]);
-
-        const usedIds = new Set(albumTracks.map(tr => tr.id));
-        let rest = ALL_MUSIC_DATA.filter(tr => !usedIds.has(tr.id));
-        if (hiddenGenres.length) rest = rest.filter(tr => !hiddenGenres.includes(tr.genre || 'Autre'));
-        const continuation = shuffleArray([...rest]);
-
-        currentPlaylistId = null;
-        originalQueue = [...albumTracks, ...continuation];
-        queue = [...originalQueue];
-        currentIndex = 0;
-
-        loadTrack(true);
+        buildFixedQueueWithContinuation(albumTracks, { autoPlay: true });
     }
 
-    // ── Lecture des morceaux d'un artiste (en ordre ou mélangé) : même
-    // logique que playAlbum, la file continue avec le reste de la
-    // bibliothèque (mélangé) une fois les morceaux de l'artiste terminés.
+    // ── Lecture des morceaux d'un artiste via le bouton "Lecture"/"Mélanger" :
+    // même logique que playAlbum — son catalogue d'abord (mélangé entre eux
+    // si demandé), puis une continuation contextuelle générée une fois
+    // épuisé, au lieu d'un mélange "radio" dès le départ.
     function playArtist(artistName, forceShuffle = null) {
         if (!artistName) return;
         const norm = artistName.trim().toLowerCase();
-        let artistTracks = ALL_MUSIC_DATA.filter(tr => splitArtistNames(fixEntities(tr.artist)).some(n => n.toLowerCase() === norm));
+        const artistTracks = ALL_MUSIC_DATA.filter(tr => splitArtistNames(fixEntities(tr.artist)).some(n => n.toLowerCase() === norm));
         if (!artistTracks.length) return;
         if (forceShuffle !== null) {
             isShuffle = forceShuffle;
             document.getElementById('shuffleBtn').classList.toggle('active', isShuffle);
             document.getElementById('fp-shuffleBtn').classList.toggle('active', isShuffle);
         }
-        if (isShuffle) artistTracks = shuffleArray([...artistTracks]);
-
-        const usedIds = new Set(artistTracks.map(tr => tr.id));
-        let rest = ALL_MUSIC_DATA.filter(tr => !usedIds.has(tr.id));
-        if (hiddenGenres.length) rest = rest.filter(tr => !hiddenGenres.includes(tr.genre || 'Autre'));
-        const continuation = shuffleArray([...rest]);
-
-        currentPlaylistId = null;
-        originalQueue = [...artistTracks, ...continuation];
-        queue = [...originalQueue];
-        currentIndex = 0;
-
-        loadTrack(true);
+        buildFixedQueueWithContinuation(artistTracks, { autoPlay: true });
     }
 
     function loadTrack(autoPlay = true) {
@@ -3072,6 +3684,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             audio.pause();
         }
         updateQueueUI();
+        refillQueueIfNeeded();
     }
 
     audio.onloadedmetadata = () => {
@@ -3082,7 +3695,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
     function nextTrack() {
         if (loopMode === 2) { audio.currentTime = 0; audio.play(); return; }
-        if (currentIndex < queue.length - 1) { currentIndex++; loadTrack(true); }
+        // En mode "repeat queue", un contexte avec continuation (album) ne
+        // doit reboucler que sur ses propres pistes (loopBoundary), jamais
+        // sur la continuation générée ajoutée après — cf. buildFixedQueueWithContinuation.
+        const effectiveLength = (loopMode === 1 && loopBoundary != null) ? loopBoundary : queue.length;
+        if (currentIndex < effectiveLength - 1) { currentIndex++; loadTrack(true); }
         else if (loopMode === 1) { currentIndex = 0; loadTrack(true); }
         else {
             audio.pause(); audio.currentTime = 0;
@@ -3115,10 +3732,22 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         document.getElementById('shuffleBtn').classList.toggle('active', isShuffle);
         document.getElementById('fp-shuffleBtn').classList.toggle('active', isShuffle);
         if (queue.length) {
-            const cur = queue[currentIndex];
-            queue = isShuffle ? shuffleArray([...originalQueue]) : [...originalQueue];
-            currentIndex = queue.findIndex(t => t.id === cur.id);
-            if (currentIndex === -1) currentIndex = 0;
+            // Le morceau en cours (et tout ce qui a déjà été joué avant lui)
+            // ne doit jamais bouger quand on (dé)active le mélange — seul ce
+            // qui reste à venir est réordonné. Reshuffle l'intégralité de la
+            // file (comme avant) déplaçait le morceau en cours n'importe où
+            // dedans, donnant l'impression qu'il "descendait" dans la file.
+            const played = queue.slice(0, currentIndex + 1);
+            const upcomingIds = new Set(queue.slice(currentIndex + 1).map(t => t.id));
+            // Repart de l'ordre canonique (originalQueue) pour la portion à
+            // venir : un aller-retour mélangé→normal→mélangé retombe sur un
+            // ordre cohérent plutôt que de composer les mélanges entre eux.
+            const upcomingCanonical = originalQueue.filter(t => upcomingIds.has(t.id));
+            // Un vrai mélange (Fisher-Yates) plutôt qu'un simple ré-affichage
+            // trié par popularité, avec une passe anti-répétition d'artiste :
+            // cf. règle 8 (le shuffle doit vraiment sembler mélangé).
+            const upcoming = isShuffle ? weightedAntiRepeatShuffle(upcomingCanonical) : upcomingCanonical;
+            queue = [...played, ...upcoming];
             updateQueueUI();
         }
     }
@@ -3646,13 +4275,16 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             img.crossOrigin = 'anonymous';
             img.onload = () => {
                 try {
-                    const size = 64;
+                    const size = 100; // plus de pixels échantillonnés = moyennes de seaux moins bruitées
                     const canvas = document.createElement('canvas');
                     canvas.width = size; canvas.height = size;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, size, size);
                     const data = ctx.getImageData(0, 0, size, size).data;
-                    const QUANT = 24; // taille des seaux de quantification (regroupe les teintes proches)
+                    // Seaux plus fins (16 au lieu de 24) : une pochette avec un rouge et un
+                    // orange proches ne doit pas être moyennée en un seul brun qui n'existe
+                    // dans aucun des deux — la teinte choisie doit rester fidèle à l'image.
+                    const QUANT = 16;
                     const buckets = new Map();
                     for (let i = 0; i < data.length; i += 4) {
                         const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
@@ -3675,13 +4307,24 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                     // des pixels valides) avant de matcher les profils cible : sinon un pixel isolé
                     // qui "colle" bien à un profil (ex: un minuscule reflet très saturé) pouvait
                     // être choisi alors qu'il est quasi invisible à l'œil sur la pochette.
-                    const MIN_POPULATION_FRACTION = 0.015;
+                    // Seuil abaissé (1.5% → 1%) car des seaux plus fins (QUANT=16 au lieu
+                    // de 24) répartissent naturellement les pixels sur davantage de seaux —
+                    // sans cet ajustement, des teintes qui qualifiaient avant repasseraient
+                    // artificiellement sous le seuil.
+                    const MIN_POPULATION_FRACTION = 0.01;
                     const dominant = allClusters.reduce((a, b) => (b.count > a.count ? b : a));
                     const clusters = allClusters
                         .filter(c => c.count / totalPixels >= MIN_POPULATION_FRACTION)
                         .sort((a, b) => b.count - a.count);
                     const maxPop = clusters.length ? clusters[0].count : dominant.count;
-                    const WEIGHT_SAT = 2, WEIGHT_LUMA = 3, WEIGHT_POP = 5;
+                    // Aligné sur les poids réels de l'Android Palette API (dont ce code
+                    // reprend le principe) : la fidélité à la teinte/luminosité cible du
+                    // profil (vibrant/muted × clair/normal/sombre) doit largement dominer
+                    // la popularité — l'ancien réglage (POP=5 > LUMA=3 > SAT=2) faisait
+                    // essentiellement "prendre le seau le plus fréquent qui passe le seuil",
+                    // souvent un aplat de fond terne, plutôt que la vraie couleur d'accent
+                    // que l'œil identifierait sur la pochette.
+                    const WEIGHT_SAT = 3, WEIGHT_LUMA = 6.5, WEIGHT_POP = 1;
                     const scoreFor = (target, c) => {
                         if (c.l < target.minL || c.l > target.maxL || c.s < target.minS) return -Infinity;
                         const satScore = 1 - Math.abs(c.s - target.targetS);
