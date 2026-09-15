@@ -201,6 +201,49 @@ function authenticate_api_user($db) {
     return false;
 }
 
+// --- AFFINITÉ DE GOÛT : historique d'écoute (pondéré par récence) + playlists
+// (curation volontaire, poids fixe plus fort). Utilisé par action=recommend et
+// action=user_affinity pour noter des morceaux candidats par proximité de
+// genre/artiste/album avec ce que l'utilisateur écoute réellement.
+function compute_user_affinity($db, $auth) {
+    $genreAffinity = []; $artistAffinity = []; $albumAffinity = []; $ownedIds = [];
+    if (!$auth) return [$genreAffinity, $artistAffinity, $albumAffinity, $ownedIds];
+
+    $stmt = $db->query("SELECT tracks.id, tracks.genre, tracks.artist, tracks.album_id FROM tracks");
+    $byId = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $t) $byId[(int)$t['id']] = $t;
+
+    $hstmt = $db->prepare("SELECT track_id FROM listen_history WHERE user_id = ? ORDER BY played_at DESC LIMIT 200");
+    $hstmt->execute([$auth['id']]);
+    $history = $hstmt->fetchAll(PDO::FETCH_COLUMN);
+    $histCount = count($history);
+    foreach ($history as $rank => $tid) {
+        $tid = (int)$tid;
+        if (!isset($byId[$tid])) continue;
+        $t = $byId[$tid];
+        $weight = max(0.2, 1 - ($rank / max(1, $histCount)));
+        if (!empty($t['genre']))    $genreAffinity[$t['genre']]     = ($genreAffinity[$t['genre']] ?? 0) + $weight;
+        if (!empty($t['artist']))   $artistAffinity[$t['artist']]   = ($artistAffinity[$t['artist']] ?? 0) + $weight;
+        if (!empty($t['album_id'])) $albumAffinity[$t['album_id']] = ($albumAffinity[$t['album_id']] ?? 0) + $weight;
+    }
+
+    $pstmt = $db->prepare("SELECT song_ids FROM playlists WHERE creator_id = ?");
+    $pstmt->execute([$auth['id']]);
+    foreach ($pstmt->fetchAll(PDO::FETCH_COLUMN) as $songIds) {
+        foreach (array_filter(explode(',', (string)$songIds)) as $rawId) {
+            $tid = (int)$rawId;
+            if ($tid <= 0 || !isset($byId[$tid])) continue;
+            $ownedIds[$tid] = true;
+            $t = $byId[$tid];
+            if (!empty($t['genre']))    $genreAffinity[$t['genre']]     = ($genreAffinity[$t['genre']] ?? 0) + 4;
+            if (!empty($t['artist']))   $artistAffinity[$t['artist']]   = ($artistAffinity[$t['artist']] ?? 0) + 4;
+            if (!empty($t['album_id'])) $albumAffinity[$t['album_id']] = ($albumAffinity[$t['album_id']] ?? 0) + 4;
+        }
+    }
+
+    return [$genreAffinity, $artistAffinity, $albumAffinity, $ownedIds];
+}
+
 // --- ALBUMS : Récupère l'ID d'un album par nom, le crée si absent ---
 function getOrCreateAlbum($db, $name) {
     $stmt = $db->prepare("SELECT id FROM albums WHERE name = ?");
@@ -558,40 +601,12 @@ switch($action) {
         $byId = [];
         foreach ($tracks as $t) $byId[(int)$t['id']] = $t;
 
-        $genreAffinity = []; $artistAffinity = []; $albumAffinity = []; $ownedIds = [];
-
-        if ($auth) {
-            // Historique d'écoute : signal comportemental pondéré par récence
-            // (rang 0 = écoute la plus récente = poids maximal).
-            $hstmt = $db->prepare("SELECT track_id FROM listen_history WHERE user_id = ? ORDER BY played_at DESC LIMIT 200");
-            $hstmt->execute([$auth['id']]);
-            $history = $hstmt->fetchAll(PDO::FETCH_COLUMN);
-            $histCount = count($history);
-            foreach ($history as $rank => $tid) {
-                $tid = (int)$tid;
-                if (!isset($byId[$tid])) continue;
-                $t = $byId[$tid];
-                $weight = max(0.2, 1 - ($rank / max(1, $histCount)));
-                if (!empty($t['genre']))    $genreAffinity[$t['genre']]     = ($genreAffinity[$t['genre']] ?? 0) + $weight;
-                if (!empty($t['artist']))   $artistAffinity[$t['artist']]   = ($artistAffinity[$t['artist']] ?? 0) + $weight;
-                if (!empty($t['album_id'])) $albumAffinity[$t['album_id']] = ($albumAffinity[$t['album_id']] ?? 0) + $weight;
-            }
-
-            // Playlists : curation volontaire, signal plus fort qu'une simple écoute.
-            $pstmt = $db->prepare("SELECT song_ids FROM playlists WHERE creator_id = ?");
-            $pstmt->execute([$auth['id']]);
-            foreach ($pstmt->fetchAll(PDO::FETCH_COLUMN) as $songIds) {
-                foreach (array_filter(explode(',', (string)$songIds)) as $rawId) {
-                    $tid = (int)$rawId;
-                    if ($tid <= 0 || !isset($byId[$tid])) continue;
-                    $ownedIds[$tid] = true;
-                    $t = $byId[$tid];
-                    if (!empty($t['genre']))    $genreAffinity[$t['genre']]     = ($genreAffinity[$t['genre']] ?? 0) + 4;
-                    if (!empty($t['artist']))   $artistAffinity[$t['artist']]   = ($artistAffinity[$t['artist']] ?? 0) + 4;
-                    if (!empty($t['album_id'])) $albumAffinity[$t['album_id']] = ($albumAffinity[$t['album_id']] ?? 0) + 4;
-                }
-            }
-        }
+        // Affinité de goût (historique pondéré par récence + playlists) via le
+        // helper partagé avec action=user_affinity — même logique, calculée
+        // une seule fois. $byId ci-dessus reste inutilisé par le helper (il
+        // refait sa propre requête minimale), mais on le garde pour le reste
+        // du bloc ci-dessous qui en a besoin.
+        [$genreAffinity, $artistAffinity, $albumAffinity, $ownedIds] = compute_user_affinity($db, $auth);
 
         // Score d'affinité pur (sans aléatoire mélangé dedans) : un petit
         // jitter additionné au score puis trié ne suffit pas à faire varier
@@ -628,6 +643,24 @@ switch($action) {
             $t['stream_url'] = $baseUrl . "api.php?action=stream&q=" . $t['id'];
         }
         echo json_encode(array_values($result));
+        break;
+
+    case 'user_affinity':
+        // --- Profil de goût brut, pour le moteur de file d'attente côté
+        // client -------------------------------------------------------------
+        // Renvoie juste les cartes d'affinité genre/artiste/album (même calcul
+        // que action=recommend, via le helper partagé) sans notation ni
+        // sélection de morceaux : le client possède déjà tout le catalogue
+        // (ALL_MUSIC_DATA) et construit lui-même la file contextuelle, il n'a
+        // besoin que de ce petit signal de préférence personnelle en plus.
+        // Utilisateur anonyme : cartes vides (comportement neutre, pas d'erreur).
+        $auth = authenticate_api_user($db);
+        [$genreAffinity, $artistAffinity, $albumAffinity] = compute_user_affinity($db, $auth);
+        echo json_encode([
+            'genre'  => (object)$genreAffinity,
+            'artist' => (object)$artistAffinity,
+            'album'  => (object)$albumAffinity,
+        ]);
         break;
 
     case 'history':
