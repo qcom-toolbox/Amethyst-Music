@@ -3705,7 +3705,31 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             audio.pause(); audio.currentTime = 0;
         }
     }
-    function prevTrack() { if (currentIndex > 0) { currentIndex--; loadTrack(true); } }
+    // ── Bouton/touche "précédent" façon Spotify/YouTube Music : dans les 5
+    // premières secondes d'un morceau, il agit vraiment comme "précédent" (on
+    // remonte dans la file) ; passé ce délai, on considère que l'utilisateur
+    // veut réécouter le morceau en cours plutôt que sauter au précédent —
+    // il revient donc juste à 0. S'il n'y a pas de morceau précédent (déjà au
+    // tout début de la file), on retombe aussi sur un simple retour à 0.
+    const PREV_TRACK_RESTART_THRESHOLD = 5;
+    function prevTrack() {
+        if (audio.currentTime >= PREV_TRACK_RESTART_THRESHOLD || currentIndex <= 0) {
+            audio.currentTime = 0;
+            return;
+        }
+        currentIndex--;
+        loadTrack(true);
+    }
+
+    // Sans ces gestionnaires, les touches média précédent/suivant (clavier,
+    // écouteurs Bluetooth, notification média du système) ne font
+    // strictement rien : contrairement à lecture/pause, un navigateur n'a pas
+    // de comportement par défaut pour previoustrack/nexttrack tant qu'aucun
+    // gestionnaire n'est enregistré — ce n'était pas branché du tout avant.
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.setActionHandler('previoustrack', prevTrack);
+        navigator.mediaSession.setActionHandler('nexttrack', nextTrack);
+    }
 
     function togglePlay() {
         if (!audio.src) return;
