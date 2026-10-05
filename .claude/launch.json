@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "amethyst-php",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PHP_CLI_SERVER_WORKERS=4", "php", "-S", "127.0.0.1:8971", "-t", "."],
+      "port": 8971
+    }
+  ]
+}
