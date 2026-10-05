@@ -10,15 +10,15 @@ A lightweight fork of Purple Music, self-hosted web application to stream and or
 ## 📸 Screenshots
 
 <p align="center">
-  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/pc.png" alt="Purple Music Desktop Interface" width=50%>
-  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/admin.png" alt="Purple Music Admin Interface" width=50%>
-  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/player.png" alt="Purple Music Player Interface" width=50%>
+  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/pc.png" alt="Purple Music Desktop Interface" width="30%">
+  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/player.png" alt="Purple Music Player Interface" width="30%">
+  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/admin.png" alt="Purple Music Admin Interface" width="30%">
+</p>
 
-  <br>
-  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/Telephponesh Home.png" alt="Purple Music Player Interface" width=50%>
-  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/Telephonesh Player.png" alt="Purple Music Phone Interface" width=50%>
-  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/Telephonesh Admin.png" alt="Purple Music Phone Interface" width=50%>
-
+<p align="center">
+  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/Telephponesh%20Home.png" alt="Purple Music Phone Interface" width="30%">
+  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/Telephonesh%20Player.png" alt="Purple Music Phone Interface" width="30%">
+  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/Telephonesh%20Admin.png" alt="Purple Music Phone Interface" width="30%">
 </p>
 
 # ❓ The SQL script might not create the user for the db correctly
