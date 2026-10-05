@@ -948,6 +948,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .track-menu-item.danger { color:var(--danger); }
         .track-menu-divider { height:1px; background:var(--border-color); margin:6px 4px; }
         .track-menu-back { font-weight:600; color:var(--text-muted); }
+        .track-menu-item.has-icon { display:flex; align-items:center; gap:12px; }
+        .track-menu-item.has-icon svg { flex-shrink:0; opacity:.85; }
+        .track-menu-item.has-icon span { overflow:hidden; text-overflow:ellipsis; }
 
         .song-select-container { max-height:300px; overflow-y:auto; margin-top:15px; border:1px solid var(--border-color); border-radius:16px; background:var(--input-bg); }
         .song-select-item { display:flex; align-items:center; padding:12px; border-bottom:1px solid rgba(255,255,255,.05); cursor:pointer; transition:.2s; }
@@ -2285,6 +2288,18 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     let ctxMenuTrackId = null;
     let ctxMenuCanEditPlaylist = false;
 
+    // Icônes Google Material Symbols (Outlined), viewBox 0 -960 960 960
+    const TRACK_MENU_ICONS = {
+        queue: 'M640-160q-50 0-85-35t-35-85q0-50 35-85t85-35q11 0 21 1.5t19 6.5v-328h200v80H760v360q0 50-35 85t-85 35ZM120-320v-80h320v80H120Zm0-160v-80h480v80H120Zm0-160v-80h480v80H120Z',
+        playNext: 'M120-320v-80h320v80H120Zm0-160v-80h480v80H120Zm0-160v-80h480v80H120Zm520 520v-320l240 160-240 160Z',
+        addToPlaylist: 'M120-320v-80h280v80H120Zm0-160v-80h440v80H120Zm0-160v-80h440v80H120Zm520 480v-160H480v-80h160v-160h80v160h160v80H720v160h-80Z',
+        remove: 'm576-80-56-56 104-104-104-104 56-56 104 104 104-104 56 56-104 104 104 104-56 56-104-104L576-80ZM120-320v-80h280v80H120Zm0-160v-80h440v80H120Zm0-160v-80h440v80H120Z'
+    };
+
+    function trackMenuIcon(path) {
+        return `<svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="${path}"/></svg>`;
+    }
+
     function trackMenuButtonHTML(trackId, canEditPlaylist = false) {
         return `<button class="track-menu-btn" onclick="event.stopPropagation();openTrackMenu(event,${trackId},${canEditPlaylist})" title="${t('track_menu_title')}" aria-label="${t('track_menu_title')}">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
@@ -2354,12 +2369,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         // dans le menu à ses yeux) et referme le menu à l'instant où il vient
         // de changer de contenu.
         const removeItem = ctxMenuCanEditPlaylist
-            ? `<div class="track-menu-divider"></div><div class="track-menu-item danger" onclick="event.stopPropagation();menuRemoveFromPlaylist()">${t('remove_from_playlist')}</div>`
+            ? `<div class="track-menu-divider"></div><div class="track-menu-item has-icon danger" onclick="event.stopPropagation();menuRemoveFromPlaylist()">${trackMenuIcon(TRACK_MENU_ICONS.remove)}<span>${t('remove_from_playlist')}</span></div>`
             : '';
         menu.innerHTML = `
-            <div class="track-menu-item" onclick="event.stopPropagation();menuAddToQueueEnd()">${t('menu_add_to_queue')}</div>
-            <div class="track-menu-item" onclick="event.stopPropagation();menuPlayNext()">${t('menu_play_next')}</div>
-            <div class="track-menu-item" onclick="event.stopPropagation();renderTrackMenuPlaylists()">${t('menu_add_to_playlist')}</div>
+            <div class="track-menu-item has-icon" onclick="event.stopPropagation();menuAddToQueueEnd()">${trackMenuIcon(TRACK_MENU_ICONS.queue)}<span>${t('menu_add_to_queue')}</span></div>
+            <div class="track-menu-item has-icon" onclick="event.stopPropagation();menuPlayNext()">${trackMenuIcon(TRACK_MENU_ICONS.playNext)}<span>${t('menu_play_next')}</span></div>
+            <div class="track-menu-item has-icon" onclick="event.stopPropagation();renderTrackMenuPlaylists()">${trackMenuIcon(TRACK_MENU_ICONS.addToPlaylist)}<span>${t('menu_add_to_playlist')}</span></div>
             ${removeItem}`;
     }
 
@@ -3638,12 +3653,34 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         buildFixedQueueWithContinuation(artistTracks, { autoPlay: true });
     }
 
+    // ── Comptage des écoutes : une piste n'est comptée (play_count +
+    // listen_history) qu'après MIN_LISTEN_SECONDS de lecture réelle. Le temps
+    // est cumulé à partir des deltas de timeupdate ; un saut de plus d'une
+    // seconde (seek dans la barre de progression) n'est pas compté.
+    const MIN_LISTEN_SECONDS = 5;
+    let listenTrack = null, listenSeconds = 0, listenLastTime = 0, listenCounted = false;
+
+    function resetListenTracking(track) {
+        listenTrack = track; listenSeconds = 0; listenLastTime = 0; listenCounted = false;
+    }
+
+    function trackListenProgress() {
+        const now = audio.currentTime, delta = now - listenLastTime;
+        listenLastTime = now;
+        if (!listenTrack || listenCounted || audio.paused || delta <= 0 || delta > 1) return;
+        listenSeconds += delta;
+        if (listenSeconds < MIN_LISTEN_SECONDS) return;
+        listenCounted = true;
+        const track = listenTrack;
+        apiCall('increment_play', { track_id: track.id }).catch(() => {});
+        track.play_count = (parseInt(track.play_count) || 0) + 1;
+        const g = ALL_MUSIC_DATA.find(t => t.id == track.id); if (g && g !== track) g.play_count = track.play_count;
+    }
+
     function loadTrack(autoPlay = true) {
         if (!queue[currentIndex]) return;
         const track = queue[currentIndex]; audio.src = track.stream_url;
-        apiCall('increment_play', { track_id: track.id }).catch(() => {});
-        track.play_count = (parseInt(track.play_count) || 0) + 1;
-        const g = ALL_MUSIC_DATA.find(t => t.id == track.id); if (g) g.play_count = track.play_count;
+        resetListenTracking(track);
 
         playTitle.innerText = fixEntities(track.title);
         playCover.src       = track.cover_url;
@@ -3808,6 +3845,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             document.getElementById('fp-total-time').innerText = formatTime(audio.duration);
         }
         updateLyricsHighlight();
+        trackListenProgress();
     };
     audio.onended = nextTrack;
 
