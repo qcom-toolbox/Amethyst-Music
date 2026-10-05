@@ -10,11 +10,11 @@ A lightweight fork of Purple Music, self-hosted web application to stream and or
 ## 📸 Screenshots
 
 <p align="center">
+  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/pc.png" alt="Purple Music Desktop Interface" width=50%>
+  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/admin.png" alt="Purple Music Admin Interface">
   <br>
   <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/player.png" alt="Purple Music Phone Interface">
-  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/pc.png" alt="Purple Music Desktop Interface">
-  <br>
-  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/admin.png" alt="Purple Music Admin Interface">
+  <img src="https://github.com/enzo-quirici/PurpleMusic/blob/main/screenshot/telephonesh.png" alt="Purple Music Phone Interface">
 </p>
 
 # ❓ The SQL script might not create the user for the db correctly
