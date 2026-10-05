@@ -3653,12 +3653,34 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         buildFixedQueueWithContinuation(artistTracks, { autoPlay: true });
     }
 
+    // ── Comptage des écoutes : une piste n'est comptée (play_count +
+    // listen_history) qu'après MIN_LISTEN_SECONDS de lecture réelle. Le temps
+    // est cumulé à partir des deltas de timeupdate ; un saut de plus d'une
+    // seconde (seek dans la barre de progression) n'est pas compté.
+    const MIN_LISTEN_SECONDS = 5;
+    let listenTrack = null, listenSeconds = 0, listenLastTime = 0, listenCounted = false;
+
+    function resetListenTracking(track) {
+        listenTrack = track; listenSeconds = 0; listenLastTime = 0; listenCounted = false;
+    }
+
+    function trackListenProgress() {
+        const now = audio.currentTime, delta = now - listenLastTime;
+        listenLastTime = now;
+        if (!listenTrack || listenCounted || audio.paused || delta <= 0 || delta > 1) return;
+        listenSeconds += delta;
+        if (listenSeconds < MIN_LISTEN_SECONDS) return;
+        listenCounted = true;
+        const track = listenTrack;
+        apiCall('increment_play', { track_id: track.id }).catch(() => {});
+        track.play_count = (parseInt(track.play_count) || 0) + 1;
+        const g = ALL_MUSIC_DATA.find(t => t.id == track.id); if (g && g !== track) g.play_count = track.play_count;
+    }
+
     function loadTrack(autoPlay = true) {
         if (!queue[currentIndex]) return;
         const track = queue[currentIndex]; audio.src = track.stream_url;
-        apiCall('increment_play', { track_id: track.id }).catch(() => {});
-        track.play_count = (parseInt(track.play_count) || 0) + 1;
-        const g = ALL_MUSIC_DATA.find(t => t.id == track.id); if (g) g.play_count = track.play_count;
+        resetListenTracking(track);
 
         playTitle.innerText = fixEntities(track.title);
         playCover.src       = track.cover_url;
@@ -3823,6 +3845,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             document.getElementById('fp-total-time').innerText = formatTime(audio.duration);
         }
         updateLyricsHighlight();
+        trackListenProgress();
     };
     audio.onended = nextTrack;
 
