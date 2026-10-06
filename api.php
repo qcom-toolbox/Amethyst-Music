@@ -3,7 +3,7 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Content-Type: application/json');
 
-// --- SÉCURITÉ : Entêtes HTTP de sécurité ---
+// --- SECURITY: HTTP security headers ---
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('X-XSS-Protection: 1; mode=block');
@@ -57,21 +57,21 @@ try {
         is_public  TINYINT(1) NOT NULL DEFAULT 1
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    // --- SÉCURITÉ : Table de rate limiting pour les tentatives de login ---
+    // --- SECURITY: Rate limiting table for login attempts ---
     $db->exec("CREATE TABLE IF NOT EXISTS login_attempts (
         id           INT AUTO_INCREMENT PRIMARY KEY,
         ip           VARCHAR(45),
         attempt_time INT
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    // --- Historique d'écoute par utilisateur, base du moteur de recommandation ---
-    // idx_lh_user_played est un index composite (user_id, played_at, track_id) :
-    // il couvre entièrement la requête de action=recommend (WHERE user_id=?
-    // ORDER BY played_at DESC LIMIT 200, SELECT track_id — scan d'index pur,
-    // sans toucher la table) et accélère fortement le filtre WHERE user_id=?
-    // de action=history même à des millions de lignes. idx_lh_track reste
-    // utile pour les suppressions en cascade (fk_listen_history_track) et
-    // toute requête future par piste plutôt que par utilisateur.
+    // --- Per-user listening history, basis of the recommendation engine ---
+    // idx_lh_user_played is a composite index (user_id, played_at, track_id):
+    // it fully covers the action=recommend query (WHERE user_id=?
+    // ORDER BY played_at DESC LIMIT 200, SELECT track_id — pure index scan,
+    // without touching the table) and greatly speeds up the WHERE user_id=? filter
+    // of action=history even at millions of rows. idx_lh_track remains
+    // useful for cascading deletes (fk_listen_history_track) and
+    // any future query per track rather than per user.
     $db->exec("CREATE TABLE IF NOT EXISTS listen_history (
         id        INT AUTO_INCREMENT PRIMARY KEY,
         user_id   INT NOT NULL,
@@ -81,17 +81,17 @@ try {
         KEY idx_lh_track (track_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    // --- OPTIMISATION : Indexation SQL ---
-    // "CREATE INDEX IF NOT EXISTS" n'est supporté que par MariaDB (10.5.2+) ;
-    // MySQL (y compris 8.0/9.x) le rejette avec une erreur de syntaxe pure,
-    // ce qui faisait planter TOUTE requête à api.php (donc l'increment_play
-    // qui alimente l'historique d'écoute) sur une base MySQL. On avale
-    // l'erreur : un index manquant est un problème de perf, pas de
-    // correction, et l'index a de toute façon déjà été créé par setup.sql.
+    // --- OPTIMIZATION: SQL indexing ---
+    // "CREATE INDEX IF NOT EXISTS" is only supported by MariaDB (10.5.2+);
+    // MySQL (including 8.0/9.x) rejects it with a plain syntax error,
+    // which crashed EVERY request to api.php (including increment_play,
+    // which feeds the listening history) on a MySQL database. We swallow
+    // the error: a missing index is a performance problem, not a
+    // correctness one, and the index was already created by setup.sql anyway.
     try { $db->exec("CREATE INDEX IF NOT EXISTS idx_play_count ON tracks(play_count)"); } catch (Exception $e) {}
     try { $db->exec("CREATE INDEX IF NOT EXISTS idx_uploader   ON tracks(uploader_id)"); } catch (Exception $e) {}
 
-    // --- MIGRATIONS AUTOMATIQUES (tracks) ---
+    // --- AUTOMATIC MIGRATIONS (tracks) ---
     $cols = $db->query("SHOW COLUMNS FROM tracks")->fetchAll(PDO::FETCH_ASSOC);
     $colNames = array_column($cols, 'Field');
     if (!in_array('genre',      $colNames)) $db->exec("ALTER TABLE tracks ADD COLUMN genre      VARCHAR(50) DEFAULT 'Autre'");
@@ -99,10 +99,10 @@ try {
     if (!in_array('duration',   $colNames)) $db->exec("ALTER TABLE tracks ADD COLUMN duration   INT         DEFAULT 0");
     if (!in_array('album_id',   $colNames)) $db->exec("ALTER TABLE tracks ADD COLUMN album_id   INT         DEFAULT NULL");
 
-    // idx_album ne peut être créé qu'une fois la colonne album_id garantie présente ci-dessus
+    // idx_album can only be created once the album_id column is guaranteed to exist above
     try { $db->exec("CREATE INDEX IF NOT EXISTS idx_album ON tracks(album_id)"); } catch (Exception $e) {}
 
-    // --- MIGRATIONS AUTOMATIQUES (users) ---
+    // --- AUTOMATIC MIGRATIONS (users) ---
     $colsUsers = $db->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_ASSOC);
     $colNamesUsers = array_column($colsUsers, 'Field');
     if (!in_array('is_admin', $colNamesUsers)) $db->exec("ALTER TABLE users ADD COLUMN is_admin TINYINT(1) DEFAULT 0");
@@ -117,23 +117,23 @@ if(!is_dir($coverDir)) mkdir($coverDir, 0777, true);
 $action = $_GET['action'] ?? '';
 $baseUrl = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]" . dirname($_SERVER['PHP_SELF']) . "/";
 
-// --- SÉCURITÉ : Constantes de validation ---
-define('MAX_AUDIO_SIZE',  100 * 1024 * 1024); // 100 Mo
-define('MAX_IMAGE_SIZE',    5 * 1024 * 1024); // 5 Mo
-define('MAX_FIELD_LENGTH', 200);              // longueur max des champs texte
-define('LOGIN_MAX_ATTEMPTS', 10);             // tentatives max sur 15 min
-define('LOGIN_WINDOW', 900);                  // fenêtre de 15 minutes (secondes)
+// --- SECURITY: Validation constants ---
+define('MAX_AUDIO_SIZE',  100 * 1024 * 1024); // 100 MB
+define('MAX_IMAGE_SIZE',    5 * 1024 * 1024); // 5 MB
+define('MAX_FIELD_LENGTH', 200);              // max length of text fields
+define('LOGIN_MAX_ATTEMPTS', 10);             // max attempts over 15 min
+define('LOGIN_WINDOW', 900);                  // 15-minute window (seconds)
 
-// --- SÉCURITÉ : Rate limiting sur les logins (par IP) ---
+// --- SECURITY: Rate limiting on logins (per IP) ---
 function check_rate_limit($db) {
     $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     $now = time();
     $window = $now - LOGIN_WINDOW;
 
-    // Nettoyer les anciennes entrées
+    // Clean up old entries
     $db->prepare("DELETE FROM login_attempts WHERE attempt_time < ?")->execute([$window]);
 
-    // Compter les tentatives récentes pour cette IP
+    // Count recent attempts for this IP
     $stmt = $db->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND attempt_time >= ?");
     $stmt->execute([$ip, $window]);
     $count = (int)$stmt->fetchColumn();
@@ -146,7 +146,7 @@ function record_login_attempt($db) {
     $db->prepare("INSERT INTO login_attempts (ip, attempt_time) VALUES (?, ?)")->execute([$ip, time()]);
 }
 
-// --- SÉCURITÉ : Validation et nettoyage des champs texte ---
+// --- SECURITY: Validation and sanitization of text fields ---
 function sanitize_text($value, $max_length = MAX_FIELD_LENGTH) {
     $value = trim($value);
     if (mb_strlen($value) > $max_length) {
@@ -155,7 +155,7 @@ function sanitize_text($value, $max_length = MAX_FIELD_LENGTH) {
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
-// --- SÉCURITÉ : Vérification du type MIME réel d'un fichier audio ---
+// --- SECURITY: Check the real MIME type of an audio file ---
 function is_valid_audio($path, $ext) {
     $allowedExts = ['mp3', 'wav', 'ogg', 'flac'];
     if (!in_array($ext, $allowedExts)) return false;
@@ -165,7 +165,7 @@ function is_valid_audio($path, $ext) {
     $sig = fread($fp, 12);
     fclose($fp);
 
-    // MP3 : frame sync ou ID3
+    // MP3: frame sync or ID3
     if (substr($sig, 0, 3) === 'ID3') return true;
     if ((ord($sig[0]) === 0xFF) && ((ord($sig[1]) & 0xE0) === 0xE0)) return true;
     // WAV : RIFF....WAVE
@@ -178,7 +178,7 @@ function is_valid_audio($path, $ext) {
     return false;
 }
 
-// --- SÉCURITÉ : Fonction d'authentification stricte pour l'API ---
+// --- SECURITY: Strict authentication function for the API ---
 function authenticate_api_user($db) {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
@@ -201,10 +201,10 @@ function authenticate_api_user($db) {
     return false;
 }
 
-// --- AFFINITÉ DE GOÛT : historique d'écoute (pondéré par récence) + playlists
-// (curation volontaire, poids fixe plus fort). Utilisé par action=recommend et
-// action=user_affinity pour noter des morceaux candidats par proximité de
-// genre/artiste/album avec ce que l'utilisateur écoute réellement.
+// --- TASTE AFFINITY: listening history (weighted by recency) + playlists
+// (deliberate curation, stronger fixed weight). Used by action=recommend and
+// action=user_affinity to score candidate tracks by
+// genre/artist/album proximity to what the user actually listens to.
 function compute_user_affinity($db, $auth) {
     $genreAffinity = []; $artistAffinity = []; $albumAffinity = []; $ownedIds = [];
     if (!$auth) return [$genreAffinity, $artistAffinity, $albumAffinity, $ownedIds];
@@ -244,7 +244,7 @@ function compute_user_affinity($db, $auth) {
     return [$genreAffinity, $artistAffinity, $albumAffinity, $ownedIds];
 }
 
-// --- ALBUMS : Récupère l'ID d'un album par nom, le crée si absent ---
+// --- ALBUMS: Gets an album's ID by name, creates it if missing ---
 function getOrCreateAlbum($db, $name) {
     $stmt = $db->prepare("SELECT id FROM albums WHERE name = ?");
     $stmt->execute([$name]);
@@ -255,13 +255,13 @@ function getOrCreateAlbum($db, $name) {
         $db->prepare("INSERT INTO albums (name) VALUES (?)")->execute([$name]);
         return (int)$db->lastInsertId();
     } catch (Exception $e) {
-        // Concurrence : un autre upload vient de créer cet album entre le SELECT et l'INSERT
+        // Concurrency: another upload just created this album between the SELECT and the INSERT
         $stmt->execute([$name]);
         return (int)$stmt->fetchColumn();
     }
 }
 
-// --- CALCULE LA DURÉE MULTI-FORMATS ---
+// --- COMPUTES THE DURATION FOR MULTIPLE FORMATS ---
 function calculateAudioDuration($path) {
     if (!file_exists($path)) return 0;
     $fp = fopen($path, 'rb');
@@ -269,7 +269,7 @@ function calculateAudioDuration($path) {
 
     $signature = fread($fp, 4);
     
-    // --- 1. CAS DU FLAC NATIF ---
+    // --- 1. NATIVE FLAC CASE ---
     if ($signature === 'fLaC') {
         fseek($fp, 8);
         $streamInfo = fread($fp, 34);
@@ -286,7 +286,7 @@ function calculateAudioDuration($path) {
         return 0;
     }
     
-    // --- 2. CAS DU M4A / MP4 / AAC CONTENEUR ---
+    // --- 2. M4A / MP4 / AAC CONTAINER CASE ---
     if (strpos($signature, 'ftyp') !== false || substr($signature, 1, 3) === 'ftyp') {
         fseek($fp, 0);
         $content = fread($fp, 1024 * 400);
@@ -308,7 +308,7 @@ function calculateAudioDuration($path) {
         return 0;
     }
 
-    // --- 3. CAS DU MP3 TRADITIONNEL (CBR/VBR) ---
+    // --- 3. TRADITIONAL MP3 CASE (CBR/VBR) ---
     fseek($fp, 0);
     $header = fread($fp, 10);
     if (substr($header, 0, 3) === 'ID3') {
@@ -368,22 +368,22 @@ function extractMp3Data($path) {
     $majorVersion = ord($header[3]);
     $b = unpack('C*', substr($header, 6, 4));
     $tagSize = ($b[1] << 21) | ($b[2] << 14) | ($b[3] << 7) | $b[4];
-    // Un tag ID3v2 présent mais vide (taille 0) est un fichier valide — certains
-    // encodeurs écrivent un en-tête ID3v2 sans frames. fread() rejette une
-    // longueur de 0 depuis PHP 8.1 (ValueError), ce qui faisait échouer tout
-    // l'upload (pas seulement l'auto-détection) au lieu de simplement ne rien
-    // trouver à extraire.
+    // An ID3v2 tag that is present but empty (size 0) is a valid file — some
+    // encoders write an ID3v2 header with no frames. fread() rejects a
+    // length of 0 since PHP 8.1 (ValueError), which made the whole
+    // upload fail (not just auto-detection) instead of simply finding
+    // nothing to extract.
     if ($tagSize <= 0) { fclose($f); return ['artist'=>null, 'title'=>null, 'album'=>null, 'cover'=>null]; }
     $tagData = fread($f, $tagSize);
     fclose($f);
 
     $result = ['cover' => null, 'artist' => null, 'title' => null, 'album' => null];
 
-    // ID3v2.2 : en-têtes de frame sur 6 octets (ID 3 lettres, taille 3
-    // octets classique, pas de flags) — format différent de v2.3/v2.4,
-    // encore rencontré sur d'anciens fichiers tagués par des outils
-    // historiques ; sans cette branche, TP1/TT2/TAL n'étaient jamais
-    // reconnus et artiste/titre/album restaient systématiquement vides.
+    // ID3v2.2: 6-byte frame headers (3-letter ID, classic 3-byte
+    // size, no flags) — a different format from v2.3/v2.4,
+    // still found in old files tagged by legacy
+    // tools; without this branch, TP1/TT2/TAL were never
+    // recognized and artist/title/album were always left empty.
     if ($majorVersion <= 2) {
         $pos = 0;
         $names = ['TP1' => 'artist', 'TT2' => 'title', 'TAL' => 'album'];
@@ -408,14 +408,14 @@ function extractMp3Data($path) {
         return $result;
     }
 
-    // ID3v2.3 / ID3v2.4 : en-têtes de frame sur 10 octets (ID 4 lettres,
-    // taille 4 octets, 2 octets de flags). Seule la forme de la taille
-    // change : entier 32 bits classique en v2.3, "synchsafe" (7 bits
-    // utiles par octet, comme la taille du tag lui-même) en v2.4 —
-    // l'interpréter comme un entier classique en v2.4 surestime la taille
-    // et décale la lecture de toutes les frames suivantes, ce qui perdait
-    // typiquement le titre/album dès qu'un artiste ou une pochette
-    // dépassait 127 octets.
+    // ID3v2.3 / ID3v2.4: 10-byte frame headers (4-letter ID,
+    // 4-byte size, 2 bytes of flags). Only the size encoding
+    // changes: a classic 32-bit integer in v2.3, "synchsafe" (7 useful
+    // bits per byte, like the tag size itself) in v2.4 —
+    // reading it as a classic integer in v2.4 overestimates the size
+    // and shifts the reading of all following frames, which typically
+    // lost the title/album as soon as an artist or a cover
+    // exceeded 127 bytes.
     $pos = 0;
     while ($pos < strlen($tagData) - 10) {
         $frameHeader = substr($tagData, $pos, 10);
@@ -464,7 +464,7 @@ function extractMp3Data($path) {
     return $result;
 }
 
-// --- OPTIMISATION : Fonction pour compresser les covers ---
+// --- OPTIMIZATION: Function to compress covers ---
 function optimizeImage($sourcePath, $destinationPath, $mime = null) {
     if (!extension_loaded('gd')) return move_uploaded_file($sourcePath, $destinationPath);
     
@@ -507,7 +507,7 @@ function optimizeImage($sourcePath, $destinationPath, $mime = null) {
 
 switch($action) {
     case 'login':
-        // --- SÉCURITÉ : Rate limiting sur les tentatives de login ---
+        // --- SECURITY: Rate limiting on login attempts ---
         if (!check_rate_limit($db)) {
             http_response_code(429);
             echo json_encode(["status" => "error", "message" => "Trop de tentatives. Réessayez dans 15 minutes."]);
@@ -527,7 +527,7 @@ switch($action) {
         $u = $_POST['username'] ?? ''; $p = $_POST['password'] ?? '';
         if(empty($u) || empty($p)) { echo json_encode(["status" => "error", "message" => "Données manquantes"]); exit; }
 
-        // --- SÉCURITÉ : Validation longueur username/password ---
+        // --- SECURITY: Username/password length validation ---
         if (mb_strlen($u) > 50) { echo json_encode(["status" => "error", "message" => "Nom d'utilisateur trop long (50 caractères max)"]); exit; }
         if (mb_strlen($p) < 6)  { echo json_encode(["status" => "error", "message" => "Mot de passe trop court (6 caractères min)"]); exit; }
         if (mb_strlen($p) > 200) { echo json_encode(["status" => "error", "message" => "Mot de passe trop long"]); exit; }
@@ -573,20 +573,20 @@ switch($action) {
         break;
 
     case 'recommend':
-        // --- Recommandation par affinité de goût --------------------------
-        // Le profil de goût de l'utilisateur combine deux signaux :
-        //  1. Son historique d'écoute réel (listen_history), pondéré par
-        //     récence : les morceaux écoutés récemment pèsent plus que les
-        //     anciens, et chaque écoute compte (pas seulement les distincts),
-        //     donc les artistes/genres qu'il écoute souvent dominent.
-        //  2. Les morceaux qu'il a explicitement rangés dans ses playlists,
-        //     signal plus fort qu'une simple écoute (curation volontaire).
-        // Chaque morceau candidat est ensuite noté par proximité de genre/
-        // artiste/album avec ce profil, plus un peu de popularité globale et
-        // une part aléatoire (diversité, liste jamais figée). Sans profil
-        // (utilisateur anonyme, ou nouveau sans historique/playlist), le
-        // score retombe sur popularité + aléatoire, bien plus pertinent
-        // qu'un tirage uniforme sur toute la bibliothèque.
+        // --- Taste affinity recommendation --------------------------------
+        // The user's taste profile combines two signals:
+        //  1. Their actual listening history (listen_history), weighted by
+        //     recency: recently played tracks weigh more than
+        //     older ones, and every listen counts (not just distinct ones),
+        //     so the artists/genres they listen to often dominate.
+        //  2. The tracks they explicitly put in their playlists,
+        //     a stronger signal than a simple listen (deliberate curation).
+        // Each candidate track is then scored by genre/artist/album
+        // proximity to this profile, plus a bit of global popularity and
+        // a random share (diversity, the list is never frozen). Without a profile
+        // (anonymous user, or a new one with no history/playlist), the
+        // score falls back to popularity + randomness, far more relevant
+        // than a uniform draw over the whole library.
         $auth = authenticate_api_user($db);
 
         $limit = filter_var($_POST['limit'] ?? 15, FILTER_VALIDATE_INT);
@@ -601,20 +601,20 @@ switch($action) {
         $byId = [];
         foreach ($tracks as $t) $byId[(int)$t['id']] = $t;
 
-        // Affinité de goût (historique pondéré par récence + playlists) via le
-        // helper partagé avec action=user_affinity — même logique, calculée
-        // une seule fois. $byId ci-dessus reste inutilisé par le helper (il
-        // refait sa propre requête minimale), mais on le garde pour le reste
-        // du bloc ci-dessous qui en a besoin.
+        // Taste affinity (history weighted by recency + playlists) via the
+        // helper shared with action=user_affinity — same logic, computed
+        // only once. $byId above stays unused by the helper (it
+        // runs its own minimal query), but we keep it for the rest
+        // of the block below that needs it.
         [$genreAffinity, $artistAffinity, $albumAffinity, $ownedIds] = compute_user_affinity($db, $auth);
 
-        // Score d'affinité pur (sans aléatoire mélangé dedans) : un petit
-        // jitter additionné au score puis trié ne suffit pas à faire varier
-        // le résultat d'un appel à l'autre dès qu'un signal d'affinité réel
-        // existe (l'écart de score entre pistes pertinentes et le reste
-        // dépasse largement l'amplitude du jitter, donc le tri retombe
-        // presque toujours sur le même ordre — c'est ce qui rendait les
-        // recommandations figées pour un compte avec de l'historique).
+        // Pure affinity score (no randomness mixed in): a small
+        // jitter added to the score and then sorted isn't enough to vary
+        // the result from one call to the next as soon as a real affinity signal
+        // exists (the score gap between relevant tracks and the rest
+        // far exceeds the jitter's amplitude, so the sort almost always
+        // lands on the same order — this is what made the
+        // recommendations frozen for an account with history).
         $scored = [];
         foreach ($tracks as $t) {
             if (isset($ownedIds[(int)$t['id']])) continue;
@@ -627,11 +627,11 @@ switch($action) {
         }
         usort($scored, fn($a, $b) => $b['_score'] <=> $a['_score']);
 
-        // On garde un bassin de candidats plus large que $limit (les mieux
-        // notés, donc toujours pertinents), puis on le mélange et on en tire
-        // $limit : la sélection ET leur ordre changent à chaque appel, tout
-        // en restant tirés des morceaux qui correspondent réellement au
-        // profil de goût plutôt que de la bibliothèque entière.
+        // We keep a pool of candidates larger than $limit (the best
+        // scored, so still relevant), then shuffle it and draw
+        // $limit from it: the selection AND its order change on every call, while
+        // still being drawn from tracks that actually match the
+        // taste profile rather than from the whole library.
         $poolSize = min(count($scored), max($limit * 3, $limit + 15));
         $pool = array_slice($scored, 0, $poolSize);
         shuffle($pool);
@@ -646,14 +646,14 @@ switch($action) {
         break;
 
     case 'user_affinity':
-        // --- Profil de goût brut, pour le moteur de file d'attente côté
-        // client -------------------------------------------------------------
-        // Renvoie juste les cartes d'affinité genre/artiste/album (même calcul
-        // que action=recommend, via le helper partagé) sans notation ni
-        // sélection de morceaux : le client possède déjà tout le catalogue
-        // (ALL_MUSIC_DATA) et construit lui-même la file contextuelle, il n'a
-        // besoin que de ce petit signal de préférence personnelle en plus.
-        // Utilisateur anonyme : cartes vides (comportement neutre, pas d'erreur).
+        // --- Raw taste profile, for the client-side queue
+        // engine ---------------------------------------------------------------
+        // Just returns the genre/artist/album affinity maps (same computation
+        // as action=recommend, via the shared helper) with no scoring or
+        // track selection: the client already has the whole catalog
+        // (ALL_MUSIC_DATA) and builds the contextual queue itself, it only
+        // needs this small personal preference signal on top.
+        // Anonymous user: empty maps (neutral behavior, no error).
         $auth = authenticate_api_user($db);
         [$genreAffinity, $artistAffinity, $albumAffinity] = compute_user_affinity($db, $auth);
         echo json_encode([
@@ -664,11 +664,11 @@ switch($action) {
         break;
 
     case 'history':
-        // --- Historique d'écoute réel de l'utilisateur --------------------
-        // Une ligne par piste (pas par écoute) : les rejouer plusieurs fois
-        // ne duplique pas l'entrée, seule la date de dernière écoute est
-        // utilisée pour l'ordre (le plus récent d'abord), comme un "récemment
-        // écouté" classique plutôt qu'un journal brut de chaque lecture.
+        // --- User's actual listening history ------------------------------
+        // One row per track (not per listen): replaying it several times
+        // doesn't duplicate the entry, only the last listen date is
+        // used for ordering (most recent first), like a classic "recently
+        // played" rather than a raw log of every playback.
         $auth = authenticate_api_user($db);
         if (!$auth) { echo json_encode(["status" => "error", "message" => "Accès refusé."]); exit; }
 
@@ -697,7 +697,7 @@ switch($action) {
         break;
 
     case 'increment_play':
-        // --- SÉCURITÉ : Authentification requise pour incrémenter ---
+        // --- SECURITY: Authentication required to increment ---
         $auth = authenticate_api_user($db);
         if (!$auth) { echo json_encode(["status" => "error", "message" => "Accès refusé."]); exit; }
 
@@ -781,10 +781,10 @@ switch($action) {
 
         $coverName = null;
         if ($alb && !empty($alb['cover'])) {
-            // Cover importée manuellement pour l'album
+            // Cover manually imported for the album
             $coverName = basename($alb['cover']);
         } else {
-            // Pas de cover importée : on prend celle du morceau le plus récent de l'album
+            // No imported cover: use the one from the album's most recent track
             $t = $db->prepare("SELECT cover FROM tracks WHERE album_id = ? AND cover IS NOT NULL AND cover != '' ORDER BY id DESC LIMIT 1");
             $t->execute([$aid]);
             $recent = $t->fetch();
@@ -809,14 +809,14 @@ switch($action) {
         if(isset($_FILES['music'])) {
             $file = $_FILES['music'];
 
-            // --- SÉCURITÉ : Vérification taille fichier audio ---
+            // --- SECURITY: Audio file size check ---
             if ($file['size'] > MAX_AUDIO_SIZE) {
                 echo json_encode(["status" => "error", "message" => "Fichier audio trop volumineux (100 Mo max)"]); exit;
             }
             
             $audioExt = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
 
-            // --- SÉCURITÉ : Vérification du type MIME réel du fichier audio ---
+            // --- SECURITY: Check the real MIME type of the audio file ---
             if (!is_valid_audio($file['tmp_name'], $audioExt)) {
                 echo json_encode(["status" => "error", "message" => "Format audio invalide ou non autorisé."]); exit;
             }
@@ -824,11 +824,11 @@ switch($action) {
             $meta = extractMp3Data($file['tmp_name']);
             $fn = bin2hex(random_bytes(8)) . '.' . $audioExt;
             
-            // --- SÉCURITÉ : Validation et troncature des champs texte ---
+            // --- SECURITY: Validation and truncation of text fields ---
             $ti = !empty($_POST['title']) ? $_POST['title'] : (!empty($meta['title']) ? $meta['title'] : pathinfo($file['name'], PATHINFO_FILENAME));
             $ar = !empty($_POST['artist']) ? $_POST['artist'] : (!empty($meta['artist']) ? $meta['artist'] : "Inconnu");
             $ge = !empty($_POST['genre']) ? $_POST['genre'] : 'Autre';
-            // Par défaut un morceau n'a pas d'album ; sinon on tente de le lire depuis les tags du mp3
+            // By default a track has no album; otherwise we try to read it from the mp3 tags
             $al = !empty($_POST['album']) ? $_POST['album'] : (!empty($meta['album']) ? $meta['album'] : null);
 
             $ti = sanitize_text($ti);
@@ -844,7 +844,7 @@ switch($action) {
             $cn = "default.png";
             
             if(!empty($_FILES['cover']['name'])) {
-                // --- SÉCURITÉ : Vérification taille image ---
+                // --- SECURITY: Image size check ---
                 if ($_FILES['cover']['size'] > MAX_IMAGE_SIZE) {
                     echo json_encode(["status" => "error", "message" => "Image de couverture trop volumineuse (5 Mo max)"]); exit;
                 }
@@ -862,8 +862,8 @@ switch($action) {
                 @unlink($tmpImgPath);
             }
 
-            // --- ALBUM : import optionnel d'une cover dédiée à l'album ---
-            // (sinon, tant qu'aucune cover n'est importée, l'album affiche la cover du morceau le plus récent)
+            // --- ALBUM: optional import of a cover dedicated to the album ---
+            // (otherwise, as long as no cover is imported, the album shows the cover of its most recent track)
             if ($albumId && !empty($_FILES['album_cover']['name'])) {
                 if ($_FILES['album_cover']['size'] > MAX_IMAGE_SIZE) {
                     echo json_encode(["status" => "error", "message" => "Image de couverture d'album trop volumineuse (5 Mo max)"]); exit;
@@ -911,7 +911,7 @@ switch($action) {
                 $params[] = sanitize_text($_POST['new_genre'], 50);
             }
 
-            // --- ALBUM : réassignation. Chaîne vide = on retire le morceau de son album ---
+            // --- ALBUM: reassignment. Empty string = remove the track from its album ---
             if(isset($_POST['new_album'])) {
                 $newAlbumName = sanitize_text($_POST['new_album'], 255);
                 if ($newAlbumName === '') {
@@ -923,7 +923,7 @@ switch($action) {
             }
 
             if(!empty($_FILES['new_cover']['name'])) {
-                // --- SÉCURITÉ : Vérification taille de la nouvelle cover ---
+                // --- SECURITY: Size check of the new cover ---
                 if ($_FILES['new_cover']['size'] > MAX_IMAGE_SIZE) {
                     echo json_encode(["status" => "error", "message" => "Image de couverture trop volumineuse (5 Mo max)"]); exit;
                 }
@@ -1008,9 +1008,9 @@ switch($action) {
         break;
 
     case 'playlists':
-        // --- VISIBILITÉ : sans identifiants valides, seules les playlists
-        // publiques sont renvoyées ; un utilisateur authentifié voit aussi
-        // ses propres playlists privées ; un admin voit tout. ---
+        // --- VISIBILITY: without valid credentials, only public
+        // playlists are returned; an authenticated user also sees
+        // their own private playlists; an admin sees everything. ---
         $auth = authenticate_api_user($db);
         if ($auth && $auth['is_admin']) {
             $stmt = $db->query("SELECT p.*, u.username as creator FROM playlists p JOIN users u ON p.creator_id = u.id");
@@ -1053,9 +1053,9 @@ switch($action) {
                 $isPublic = isset($_POST['is_public']) && ($_POST['is_public'] === '0' || $_POST['is_public'] === 'false') ? 0 : 1;
                 $db->prepare("UPDATE playlists SET is_public=? WHERE id=?")->execute([$isPublic, $pid]);
             } elseif ($mode === 'reorder') {
-                // --- SÉCURITÉ : le nouvel ordre doit contenir exactement le même
-                // ensemble de pistes que l'actuel (aucun ajout/retrait possible
-                // via ce mode, réservé à add/remove) ---
+                // --- SECURITY: the new order must contain exactly the same
+                // set of tracks as the current one (no addition/removal possible
+                // via this mode, reserved for add/remove) ---
                 $rawIds = array_filter(explode(',', $curr['song_ids']));
                 $currentIds = array_values(array_filter(array_map('intval', $rawIds), fn($v) => $v > 0));
 
@@ -1071,7 +1071,7 @@ switch($action) {
 
                 $db->prepare("UPDATE playlists SET song_ids=? WHERE id=?")->execute([implode(',', $newIds), $pid]);
             } else {
-                // --- SÉCURITÉ : Validation stricte des song_ids (entiers positifs uniquement) ---
+                // --- SECURITY: Strict validation of song_ids (positive integers only) ---
                 $rawIds = array_filter(explode(',', $curr['song_ids']));
                 $ids = array_filter(array_map('intval', $rawIds), fn($v) => $v > 0);
 

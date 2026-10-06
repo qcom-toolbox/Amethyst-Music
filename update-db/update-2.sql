@@ -1,24 +1,24 @@
 -- ==========================================================
---  Purple Music / Amethyst Music — Migration 2 : Visibilité des playlists
---  À exécuter une seule fois sur une base existante :
+--  Purple Music / Amethyst Music — Migration 2: Playlist visibility
+--  Run only once on an existing database:
 --    mysql -u root -p purple_music < update-db/update-2.sql
 --
---  Nécessite MySQL 8.0.29+ ou MariaDB 10.5.2+ (support de
---  "ADD COLUMN IF NOT EXISTS"). Sur une version plus ancienne,
---  retirez le "IF NOT EXISTS" de l'ALTER TABLE ci-dessous après
---  avoir vérifié que la colonne `is_public` n'existe pas déjà.
+--  Requires MySQL 8.0.29+ or MariaDB 10.5.2+ (support for
+--  "ADD COLUMN IF NOT EXISTS"). On an older version,
+--  remove the "IF NOT EXISTS" from the ALTER TABLE below after
+--  checking that the `is_public` column doesn't already exist.
 -- ==========================================================
 
 USE purple_music;
 
--- Chaque créateur peut choisir si sa playlist est visible par tous
--- (1, valeur par défaut — préserve le comportement actuel où toutes
--- les playlists sont publiques) ou seulement par lui-même / un admin (0).
+-- Each creator can choose whether their playlist is visible to everyone
+-- (1, the default — keeps the current behavior where all
+-- playlists are public) or only to themselves / an admin (0).
 ALTER TABLE `playlists`
     ADD COLUMN IF NOT EXISTS `is_public` TINYINT(1) NOT NULL DEFAULT 1 AFTER `song_ids`;
 
 -- ==========================================================
---  FIN — Vérification rapide
+--  END — Quick check
 -- ==========================================================
 
 SELECT 'Migration 2 (visibilité des playlists) appliquée avec succès ✔' AS statut;

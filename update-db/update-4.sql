@@ -1,44 +1,44 @@
 -- ==========================================================
---  Purple Music / Amethyst Music — Migration 4 : Index pour
---  l'historique d'écoute à grande échelle
---  À exécuter une seule fois sur une base existante :
+--  Purple Music / Amethyst Music — Migration 4: Indexes for
+--  large-scale listening history
+--  Run only once on an existing database:
 --    mysql -u root -p purple_music < update-db/update-4.sql
 --
---  Contrairement aux migrations précédentes, celle-ci n'utilise PAS la
---  syntaxe raccourcie "... IF NOT EXISTS" sur CREATE INDEX / ADD COLUMN /
---  ADD KEY : cette syntaxe est une extension MariaDB (10.1+/10.5+) que
---  MySQL (y compris 8.0 et 9.x) rejette avec une pure erreur de syntaxe —
---  c'est d'ailleurs ce qui faisait planter TOUTE requête à api.php sur une
---  base MySQL avant le correctif de la migration précédente. On utilise
---  donc ici la même technique portable que la migration 1 (vérification
---  via information_schema + SQL dynamique), qui fonctionne à l'identique
---  sur MySQL et sur MariaDB.
+--  Unlike the previous migrations, this one does NOT use the
+--  short "... IF NOT EXISTS" syntax on CREATE INDEX / ADD COLUMN /
+--  ADD KEY: that syntax is a MariaDB extension (10.1+/10.5+) that
+--  MySQL (including 8.0 and 9.x) rejects with a plain syntax error —
+--  which is actually what crashed EVERY request to api.php on a
+--  MySQL database before the previous migration's fix. So here we use
+--  the same portable technique as migration 1 (checking
+--  via information_schema + dynamic SQL), which works identically
+--  on MySQL and on MariaDB.
 -- ==========================================================
 
 USE purple_music;
 
 -- ----------------------------------------------------------
--- 1. Index composite couvrant (user_id, played_at, track_id) sur
+-- 1. Covering composite index (user_id, played_at, track_id) on
 --    listen_history.
 --
---    Cette table grossit d'une ligne à chaque lecture et n'a aucune limite
---    naturelle : sur un historique "hors norme" (beaucoup d'utilisateurs
---    actifs sur une longue période), les deux requêtes qui la lisent
---    (action=recommend et action=history dans api.php) dégénèrent en scan
---    complet de la table sans un index adapté.
+--    This table grows by one row per playback and has no natural
+--    limit: with an "unusually large" history (many users
+--    active over a long period), the two queries that read it
+--    (action=recommend and action=history in api.php) degrade into a full
+--    table scan without a suitable index.
 --
---    - action=recommend fait :
+--    - action=recommend does:
 --        WHERE user_id = ? ORDER BY played_at DESC LIMIT 200, SELECT track_id
---      Avec cet index, c'est un scan d'index pur (covering index) : MySQL
---      trouve la plage du bon user_id, la parcourt déjà triée par
---      played_at, et lit track_id directement dans l'index sans jamais
---      toucher la table.
---    - action=history fait :
+--      With this index, it's a pure index scan (covering index): MySQL
+--      finds the range for the right user_id, walks it already sorted by
+--      played_at, and reads track_id directly from the index without ever
+--      touching the table.
+--    - action=history does:
 --        WHERE user_id = ? GROUP BY track_id ORDER BY MAX(played_at) DESC
---      L'index accélère fortement le WHERE user_id=? (la partie coûteuse à
---      grande échelle), même si le regroupement final se fait ensuite en
---      mémoire sur un nombre de lignes borné par le nombre de pistes
---      distinctes de cet utilisateur, pas par la taille totale de la table.
+--      The index greatly speeds up the WHERE user_id=? (the expensive part at
+--      scale), even though the final grouping is then done in
+--      memory over a number of rows bounded by this user's number of
+--      distinct tracks, not by the total size of the table.
 -- ----------------------------------------------------------
 
 SET @idx_exists = (
@@ -58,13 +58,13 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 -- ----------------------------------------------------------
--- 2. Suppression de l'ancien index simple idx_lh_user (user_id), devenu
---    redondant : tout ce qu'il permettait est déjà couvert par le nouvel
---    index composite ci-dessus (qui commence aussi par user_id). Le garder
---    ne servirait qu'à ralentir chaque INSERT (une ligne par lecture) pour
---    rien. N'existe que sur les bases provisionnées avant cette migration
---    (le nouveau schéma, dans setup.sql et l'auto-migration de api.php, ne
---    le crée plus).
+-- 2. Drop the old simple index idx_lh_user (user_id), which became
+--    redundant: everything it allowed is already covered by the new
+--    composite index above (which also starts with user_id). Keeping it
+--    would only slow down every INSERT (one row per playback) for
+--    nothing. Only exists on databases provisioned before this migration
+--    (the new schema, in setup.sql and api.php's auto-migration, no
+--    longer creates it).
 -- ----------------------------------------------------------
 
 SET @old_idx_exists = (
@@ -84,7 +84,7 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 -- ==========================================================
---  FIN — Vérification rapide
+--  END — Quick check
 -- ==========================================================
 
 SELECT 'Migration 4 (index historique d''écoute) appliquée avec succès ✔' AS statut;

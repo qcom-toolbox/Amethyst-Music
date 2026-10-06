@@ -1,26 +1,26 @@
 -- ==========================================================
---  Purple Music — Script de création MySQL
---  Exécuter en tant que root : mysql -u root -p < setup_purple_music.sql
+--  Purple Music — MySQL creation script
+--  Run as root: mysql -u root -p < setup_purple_music.sql
 -- ==========================================================
 
--- 1. Création de la base de données
+-- 1. Create the database
 CREATE DATABASE IF NOT EXISTS purple_music
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 
--- 2. Création de l'utilisateur dédié
---    ⚠ Remplacez 'VotreMotDePasseIci' par un mot de passe fort !
+-- 2. Create the dedicated user
+--    ⚠ Replace 'VotreMotDePasseIci' with a strong password!
 CREATE USER IF NOT EXISTS 'purple_music_user'@'localhost'
     IDENTIFIED BY 'VotreMotDePasseIci';
 
--- 3. Attribution des droits (uniquement sur cette base)
+-- 3. Grant privileges (on this database only)
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP
     ON purple_music.*
     TO 'purple_music_user'@'localhost';
 
 FLUSH PRIVILEGES;
 
--- 4. Sélection de la base
+-- 4. Select the database
 USE purple_music;
 
 -- ==========================================================
@@ -97,12 +97,12 @@ CREATE TABLE IF NOT EXISTS `playlists` (
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- idx_lh_user_played (user_id, played_at, track_id) est un index composite
--- couvrant : il sert intégralement la requête de recommandation (WHERE
--- user_id=? ORDER BY played_at DESC LIMIT n, SELECT track_id) sans jamais
--- toucher la table, et accélère le filtre WHERE user_id=? de l'historique
--- même à des millions de lignes. idx_lh_track sert aux suppressions en
--- cascade et à toute requête future par piste.
+-- idx_lh_user_played (user_id, played_at, track_id) is a covering
+-- composite index: it fully serves the recommendation query (WHERE
+-- user_id=? ORDER BY played_at DESC LIMIT n, SELECT track_id) without ever
+-- touching the table, and speeds up the history's WHERE user_id=? filter
+-- even at millions of rows. idx_lh_track is used for cascading
+-- deletes and any future query per track.
 CREATE TABLE IF NOT EXISTS `listen_history` (
     `id`            INT UNSIGNED    NOT NULL AUTO_INCREMENT,
     `user_id`       INT UNSIGNED    NOT NULL,
@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS `listen_history` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================================
---  DONNÉES PAR DÉFAUT — Genres & Settings de base
+--  DEFAULT DATA — Genres & base settings
 -- ==========================================================
 
 INSERT IGNORE INTO `genres` (`name`) VALUES
@@ -153,7 +153,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `value`) VALUES
     ('favicon',             'favicon.png');
 
 -- ==========================================================
---  FIN — Vérification rapide
+--  END — Quick check
 -- ==========================================================
 
 SELECT 'Base purple_music créée avec succès ✔' AS statut;
