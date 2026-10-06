@@ -5,7 +5,7 @@ $configFile = __DIR__ . '/config.php';
 $isInstalled = file_exists($configFile);
 
 // ===========================================================
-//  MODE INSTALLATION (PREMIER LANCEMENT)
+//  INSTALL MODE (FIRST LAUNCH)
 // ===========================================================
 if (!$isInstalled) {
     if (isset($_POST['install'])) {
@@ -13,18 +13,18 @@ if (!$isInstalled) {
         $admin_pass = $_POST['admin_password'] ?? '';
         $site_name  = trim($_POST['site_name'] ?? 'Purple Music');
 
-        // Paramètres MySQL
+        // MySQL settings
         $db_host = trim($_POST['db_host'] ?? '127.0.0.1');
         $db_port = trim($_POST['db_port'] ?? '3306');
         $db_name = trim($_POST['db_name'] ?? 'purple_music');
         $db_user = trim($_POST['db_user'] ?? 'purple_music_user');
         $db_pass = $_POST['db_pass'] ?? '';
 
-        $color_bg      = $_POST['inst_color_bg']      ?? '#0f0c1d';
-        $color_panel   = $_POST['inst_color_panel']   ?? '#1b1429';
-        $color_primary = $_POST['inst_color_primary'] ?? '#8e44ad';
-        $color_accent  = $_POST['inst_color_accent']  ?? '#bb86fc';
-        $color_text    = $_POST['inst_color_text']    ?? '#e0e0e0';
+        $color_bg      = safeColor($_POST['inst_color_bg'] ?? '', '#0f0c1d');
+        $color_panel   = safeColor($_POST['inst_color_panel'] ?? '', '#1b1429');
+        $color_primary = safeColor($_POST['inst_color_primary'] ?? '', '#8e44ad');
+        $color_accent  = safeColor($_POST['inst_color_accent'] ?? '', '#bb86fc');
+        $color_text    = safeColor($_POST['inst_color_text'] ?? '', '#e0e0e0');
 
         if (empty($admin_user) || empty($admin_pass)) {
             $install_error = "Identifiant et mot de passe admin requis.";
@@ -37,7 +37,7 @@ if (!$isInstalled) {
                     PDO::ATTR_EMULATE_PREPARES   => false,
                 ]);
 
-                // ── Création des tables ──────────────────────────────────
+                // ── Table creation ─────────────────────────────────────
                 $pdo->exec("CREATE TABLE IF NOT EXISTS `settings` (
                     `setting_key` VARCHAR(100) NOT NULL,
                     `value` TEXT NOT NULL,
@@ -91,11 +91,11 @@ if (!$isInstalled) {
                         FOREIGN KEY (`creator_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-                // ── Dossiers ────────────────────────────────────────────
+                // ── Folders ──────────────────────────────────────────────
                 if (!is_dir(__DIR__ . '/music'))  mkdir(__DIR__ . '/music',  0755, true);
                 if (!is_dir(__DIR__ . '/covers')) mkdir(__DIR__ . '/covers', 0755, true);
 
-                // ── Assets uploadés ─────────────────────────────────────
+                // ── Uploaded assets ─────────────────────────────────────
                 if (!empty($_FILES['inst_favicon']['name'])) {
                     $ext = strtolower(pathinfo($_FILES['inst_favicon']['name'], PATHINFO_EXTENSION));
                     if (in_array($ext, ['png', 'ico'])) {
@@ -145,7 +145,7 @@ if (!$isInstalled) {
                 $stmtU->execute([$admin_user, $hash]);
                 $adminId = $pdo->lastInsertId();
 
-                // ── Protection dossiers ─────────────────────────────────
+                // ── Folder protection ───────────────────────────────────
                 file_put_contents(__DIR__ . '/music/.htaccess',
                     "RemoveHandler .php .phtml .phps\nOptions -ExecCGI\n<Files *>\nSetHandler default-handler\n</Files>");
                 file_put_contents(__DIR__ . '/covers/.htaccess',
@@ -165,8 +165,8 @@ if (!$isInstalled) {
                 $_SESSION['user_id']  = (int)$adminId;
                 $_SESSION['username'] = $admin_user;
                 $_SESSION['is_admin'] = 1;
-                // Nécessaire pour les appels authentifiés à api.php juste après
-                // l'installation (voir la connexion normale plus bas dans le fichier).
+                // Required for authenticated calls to api.php right after
+                // installation (see the normal login further down in the file).
                 $_SESSION['api_pw']   = $admin_pass;
                 header("Location: " . $_SERVER['PHP_SELF']); exit;
 
@@ -260,12 +260,12 @@ if (!$isInstalled) {
 }
 
 // ===========================================================
-//  CONNEXION MySQL & BOOTSTRAP
+//  MySQL CONNECTION & BOOTSTRAP
 // ===========================================================
 require_once $configFile;
 
 // ===========================================================
-//  LANGUE (FR / EN)
+//  LANGUAGE (FR / EN)
 // ===========================================================
 if (isset($_GET['setlang']) && in_array($_GET['setlang'], ['fr', 'en'], true)) {
     setcookie('am_lang', $_GET['setlang'], time() + 60 * 60 * 24 * 365, '/');
@@ -360,6 +360,7 @@ $I18N = [
     'settings_title'          => ['fr' => 'Filtres & Paramètres',           'en' => 'Filters & Settings'],
     'settings_language_label' => ['fr' => 'Langue :',                       'en' => 'Language:'],
     'settings_theme_label'    => ['fr' => 'Thème :',                        'en' => 'Theme:'],
+    'settings_adaptive_fallback_label' => ['fr' => 'Thème adaptatif par défaut (aucune lecture en cours) :', 'en' => 'Default adaptive theme (when nothing is playing):'],
     'settings_hide_genres_pre'   => ['fr' => 'Genres à',                    'en' => 'Genres to'],
     'settings_hide_genres_word'  => ['fr' => 'masquer',                     'en' => 'hide'],
     'settings_hide_admin_label'  => ['fr' => 'Masquer le Panel Admin de la navigation', 'en' => 'Hide Admin Panel from navigation'],
@@ -406,17 +407,17 @@ function t(string $key): string {
     return $I18N[$key][$LANG] ?? $I18N[$key]['fr'] ?? $key;
 }
 
-// api.php stocke déjà le texte HTML-échappé (sanitize_text côté API), donc un
-// "&" ou une apostrophe saisis à l'upload finissent en "&amp;"/"&#039;" littéral
-// en base. htmlspecialchars() les ré-échapperait une seconde fois à l'affichage,
-// ce qui montrerait le texte brut "&amp;"/"&#039;" au lieu du caractère voulu.
-// Utilisé uniquement pour le texte affiché (jamais pour les attributs value/
-// onclick qui doivent rester la valeur brute exacte pour matcher côté serveur).
+// api.php already stores HTML-escaped text (sanitize_text on the API side), so a
+// "&" or an apostrophe typed at upload ends up as a literal "&amp;"/"&#039;"
+// in the database. htmlspecialchars() would escape them a second time on display,
+// which would show the raw text "&amp;"/"&#039;" instead of the intended character.
+// Only used for displayed text (never for value/onclick attributes,
+// which must keep the exact raw value to match on the server side).
 function fixEntities(string $s): string {
     $s = str_replace('&#039;', "'", $s);
-    // "&" (mot de liaison) est traduit dans la langue courante via le
-    // dictionnaire i18n (clé word_and) plutôt qu'un ternaire fr/en codé en dur,
-    // pour que l'ajout d'une nouvelle langue à $I18N suffise à la couvrir ici.
+    // "&" (the joining word) is translated into the current language via the
+    // i18n dictionary (key word_and) rather than a hard-coded fr/en ternary,
+    // so that adding a new language to $I18N is enough to cover it here.
     $s = str_replace('&amp;', t('word_and'), $s);
     return $s;
 }
@@ -433,10 +434,21 @@ function checkRateLimit(string $action, int $limitSeconds): bool {
     return true;
 }
 
-// Sert les variantes "r,g,b" des couleurs de thème pour permettre des
-// rgba(var(--x-rgb), alpha) dans le CSS — nécessaire pour que les halos/
-// surbrillances tintés continuent de suivre la couleur choisie (site ou
-// thème client) au lieu de rester figés sur le violet d'origine.
+// Only lets through real CSS colors (#rgb, #rrggbb, #rrggbbaa, rgb()/rgba()
+// with numbers) and falls back to $default otherwise. Theme colors are printed
+// raw inside the page's <style> block, so without this check a crafted value
+// like "red;}</style><script>…" would inject markup/script for every visitor.
+function safeColor($value, string $default): string {
+    $value = is_string($value) ? trim($value) : '';
+    if (preg_match('/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i', $value)) return $value;
+    if (preg_match('/^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/i', $value)) return $value;
+    return $default;
+}
+
+// Serves the "r,g,b" variants of the theme colors to allow
+// rgba(var(--x-rgb), alpha) in the CSS — needed so that tinted glows/
+// highlights keep following the chosen color (site or client theme)
+// instead of staying stuck on the original purple.
 function hexToRgbTriplet(string $hex): string {
     $hex = ltrim($hex, '#');
     if (strlen($hex) === 3) $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
@@ -446,12 +458,12 @@ function hexToRgbTriplet(string $hex): string {
 }
 
 // ===========================================================
-//  CLIENT api.php — index.php ne parle plus jamais directement
-//  aux tables `users`/`tracks`/`playlists` : toute la logique
-//  métier (auth, upload, lecture, playlists…) passe par api.php,
-//  exactement comme le fait le client Android Amethyst Music.
-//  Seuls les réglages du site (thème serveur, genres) restent
-//  gérés ici : api.php n'a pas de notion de ces tables.
+//  api.php CLIENT — index.php never talks directly to the
+//  `users`/`tracks`/`playlists` tables anymore: all business
+//  logic (auth, upload, playback, playlists…) goes through api.php,
+//  exactly like the Amethyst Music Android client does.
+//  Only the site settings (server theme, genres) are still
+//  handled here: api.php has no notion of these tables.
 // ===========================================================
 function api_request(string $action, array $params = []): array {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -485,7 +497,7 @@ function api_request(string $action, array $params = []): array {
     return is_array($decoded) ? $decoded : $fallback;
 }
 
-// ── PDO MySQL (réglages du site : thème & genres uniquement) ──
+// ── PDO MySQL (site settings: theme & genres only) ──
 try {
     $dsn = sprintf(
         'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
@@ -501,19 +513,19 @@ try {
                       ->fetchAll(PDO::FETCH_KEY_PAIR);
 
     $site_name           = $settingsRaw['site_name']           ?? 'Purple Music';
-    $color_bg            = $settingsRaw['color_bg']            ?? '#0f0c1d';
-    $color_panel         = $settingsRaw['color_panel']         ?? '#1b1429';
-    $color_primary       = $settingsRaw['color_primary']       ?? '#8e44ad';
-    $color_accent        = $settingsRaw['color_accent']        ?? '#bb86fc';
-    $color_text          = $settingsRaw['color_text']          ?? '#e0e0e0';
-    $color_text_muted    = $settingsRaw['color_text_muted']    ?? '#a196b4';
-    $color_border        = $settingsRaw['color_border']        ?? '#3d2b56';
-    $color_search_bg     = $settingsRaw['color_search_bg']     ?? '#241b36';
-    $color_header_bg     = $settingsRaw['color_header_bg']     ?? 'rgba(27, 20, 41, 0.85)';
-    $color_player_bg     = $settingsRaw['color_player_bg']     ?? 'rgba(30, 24, 45, 0.85)';
-    $color_mob_nav_bg    = $settingsRaw['color_mob_nav_bg']    ?? 'rgba(21, 16, 32, 0.95)';
-    $color_fp_gradient_1 = $settingsRaw['color_fp_gradient_1'] ?? '#302b63';
-    $color_fp_gradient_2 = $settingsRaw['color_fp_gradient_2'] ?? '#0f0c29';
+    $color_bg            = safeColor($settingsRaw['color_bg']            ?? '', '#0f0c1d');
+    $color_panel         = safeColor($settingsRaw['color_panel']         ?? '', '#1b1429');
+    $color_primary       = safeColor($settingsRaw['color_primary']       ?? '', '#8e44ad');
+    $color_accent        = safeColor($settingsRaw['color_accent']        ?? '', '#bb86fc');
+    $color_text          = safeColor($settingsRaw['color_text']          ?? '', '#e0e0e0');
+    $color_text_muted    = safeColor($settingsRaw['color_text_muted']    ?? '', '#a196b4');
+    $color_border        = safeColor($settingsRaw['color_border']        ?? '', '#3d2b56');
+    $color_search_bg     = safeColor($settingsRaw['color_search_bg']     ?? '', '#241b36');
+    $color_header_bg     = safeColor($settingsRaw['color_header_bg']     ?? '', 'rgba(27, 20, 41, 0.85)');
+    $color_player_bg     = safeColor($settingsRaw['color_player_bg']     ?? '', 'rgba(30, 24, 45, 0.85)');
+    $color_mob_nav_bg    = safeColor($settingsRaw['color_mob_nav_bg']    ?? '', 'rgba(21, 16, 32, 0.95)');
+    $color_fp_gradient_1 = safeColor($settingsRaw['color_fp_gradient_1'] ?? '', '#302b63');
+    $color_fp_gradient_2 = safeColor($settingsRaw['color_fp_gradient_2'] ?? '', '#0f0c29');
     $default_cover       = $settingsRaw['default_cover']       ?? 'default.png';
     $favicon_file        = $settingsRaw['favicon']             ?? 'favicon.png';
 
@@ -528,7 +540,7 @@ try {
 }
 
 // ===========================================================
-//  AUTHENTIFICATION — déléguée à api.php (action=login/register)
+//  AUTHENTICATION — delegated to api.php (action=login/register)
 // ===========================================================
 if (isset($_POST['register'])) {
     if (!checkRateLimit('register', 30)) {
@@ -555,9 +567,9 @@ if (isset($_POST['login'])) {
         $_SESSION['user_id']  = (int)$res['user_id'];
         $_SESSION['username'] = $res['username'];
         $_SESSION['is_admin'] = !empty($res['is_admin']) ? 1 : 0;
-        // api.php n'a pas de session : chaque appel authentifié doit renvoyer
-        // le mot de passe. On le garde côté serveur (jamais en localStorage)
-        // pour l'injecter dans la page et permettre au JS d'appeler api.php.
+        // api.php has no session: every authenticated call must resend
+        // the password. We keep it on the server (never in localStorage)
+        // to inject it into the page and let the JS call api.php.
         $_SESSION['api_pw'] = $_POST['password'] ?? '';
         header("Location: " . $_SERVER['PHP_SELF']); exit;
     } else {
@@ -573,17 +585,17 @@ $is_admin = !empty($_SESSION['is_admin']);
 $api_pw   = $_SESSION['api_pw'] ?? '';
 
 // ===========================================================
-//  CONTRÔLES (utilisateur connecté)
+//  CONTROLS (logged-in user)
 // ===========================================================
 if ($user_id) {
-    // Vérification CSRF pour toutes les requêtes POST
+    // CSRF check for all POST requests
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
             die("Jeton CSRF invalide.");
         }
     }
 
-    // ── Sauvegarde paramètres admin ──────────────────────────
+    // ── Save admin settings ──────────────────────────────────
     if ($is_admin && isset($_POST['save_admin_settings'])) {
         $upsert = $db->prepare(
             "INSERT INTO `settings` (`setting_key`, `value`) VALUES (?, ?)
@@ -591,19 +603,19 @@ if ($user_id) {
         );
         $fields = [
             'site_name'           => trim($_POST['adm_site_name']),
-            'color_bg'            => $_POST['adm_color_bg'],
-            'color_panel'         => $_POST['adm_color_panel'],
-            'color_primary'       => $_POST['adm_color_primary'],
-            'color_accent'        => $_POST['adm_color_accent'],
-            'color_text'          => $_POST['adm_color_text'],
-            'color_text_muted'    => $_POST['adm_color_text_muted'],
-            'color_border'        => $_POST['adm_color_border'],
-            'color_search_bg'     => $_POST['adm_color_search_bg'],
-            'color_header_bg'     => $_POST['adm_color_header_bg'],
-            'color_player_bg'     => $_POST['adm_color_player_bg'],
-            'color_mob_nav_bg'    => $_POST['adm_color_mob_nav_bg'],
-            'color_fp_gradient_1' => $_POST['adm_color_fp_gradient_1'],
-            'color_fp_gradient_2' => $_POST['adm_color_fp_gradient_2'],
+            'color_bg'            => safeColor($_POST['adm_color_bg'] ?? '', '#0f0c1d'),
+            'color_panel'         => safeColor($_POST['adm_color_panel'] ?? '', '#1b1429'),
+            'color_primary'       => safeColor($_POST['adm_color_primary'] ?? '', '#8e44ad'),
+            'color_accent'        => safeColor($_POST['adm_color_accent'] ?? '', '#bb86fc'),
+            'color_text'          => safeColor($_POST['adm_color_text'] ?? '', '#e0e0e0'),
+            'color_text_muted'    => safeColor($_POST['adm_color_text_muted'] ?? '', '#a196b4'),
+            'color_border'        => safeColor($_POST['adm_color_border'] ?? '', '#3d2b56'),
+            'color_search_bg'     => safeColor($_POST['adm_color_search_bg'] ?? '', '#241b36'),
+            'color_header_bg'     => safeColor($_POST['adm_color_header_bg'] ?? '', 'rgba(27, 20, 41, 0.85)'),
+            'color_player_bg'     => safeColor($_POST['adm_color_player_bg'] ?? '', 'rgba(30, 24, 45, 0.85)'),
+            'color_mob_nav_bg'    => safeColor($_POST['adm_color_mob_nav_bg'] ?? '', 'rgba(21, 16, 32, 0.95)'),
+            'color_fp_gradient_1' => safeColor($_POST['adm_color_fp_gradient_1'] ?? '', '#302b63'),
+            'color_fp_gradient_2' => safeColor($_POST['adm_color_fp_gradient_2'] ?? '', '#0f0c29'),
         ];
         foreach ($fields as $k => $v) $upsert->execute([$k, $v]);
 
@@ -621,20 +633,22 @@ if ($user_id) {
         header("Location: " . $_SERVER['PHP_SELF']); exit;
     }
 
-    if ($is_admin && isset($_GET['delete_genre'])) {
-        $db->prepare("DELETE FROM `genres` WHERE `name` = ?")->execute([$_GET['delete_genre']]);
+    // POST only (covered by the CSRF check above): a plain GET link could be
+    // triggered by any page that gets a logged-in admin to open it.
+    if ($is_admin && isset($_POST['delete_genre'])) {
+        $db->prepare("DELETE FROM `genres` WHERE `name` = ?")->execute([$_POST['delete_genre']]);
         header("Location: " . $_SERVER['PHP_SELF']); exit;
     }
 
-    // Upload, édition/suppression de pistes, et gestion des playlists sont
-    // désormais entièrement gérés côté client via des appels fetch() à
-    // api.php (voir le <script> plus bas) — index.php ne duplique plus
-    // cette logique (extraction ID3, calcul de durée, compression d'image…
-    // tout ça vit déjà dans api.php).
+    // Upload, track editing/deletion, and playlist management are
+    // now handled entirely on the client via fetch() calls to
+    // api.php (see the <script> further down) — index.php no longer duplicates
+    // this logic (ID3 extraction, duration computation, image compression…
+    // all of that already lives in api.php).
 }
 
 // ===========================================================
-//  DONNÉES POUR LE RENDU — lues depuis api.php
+//  RENDERING DATA — read from api.php
 // ===========================================================
 $all_tracks    = $user_id ? api_request('list') : [];
 if (!is_array($all_tracks) || (isset($all_tracks['status']))) $all_tracks = [];
@@ -644,8 +658,8 @@ $all_playlists = $user_id
     : [];
 if (!is_array($all_playlists) || (isset($all_playlists['status']))) $all_playlists = [];
 
-// Index des pistes par id : sert à retrouver les 4 premières pochettes
-// de chaque playlist (aperçu en mosaïque) sans appel API supplémentaire.
+// Track index by id: used to find the first 4 covers of each
+// playlist (mosaic preview) without an extra API call.
 $tracksById = [];
 foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
@@ -679,13 +693,14 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             --player-bg:     <?php echo $color_player_bg; ?>;
             --fp-gradient-1: <?php echo $color_fp_gradient_1; ?>;
             --fp-gradient-2: <?php echo $color_fp_gradient_2; ?>;
-            /* Surfaces/texte non exposés au panneau admin, mais suivant
-               quand même le thème choisi par l'utilisateur (voir applyTheme). */
+            /* Surfaces/text not exposed in the admin panel, but still
+               following the theme chosen by the user (see applyTheme). */
             --modal-bg:    #1e162e;
             --input-bg:    #140f1f;
             --elevated-bg: #2d2444;
             --player-text: #ffffff;
             --danger: #ff4757;
+            --danger-rgb: 255,71,87;
             --radius-sm: 8px; --radius-md: 16px; --radius-lg: 24px; --radius-full: 9999px;
         }
         * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -693,7 +708,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         body.login-page { padding:0; display:flex; align-items:center; justify-content:center; min-height:100vh; }
         ::-webkit-scrollbar { width:8px; } ::-webkit-scrollbar-track { background:var(--bg-dark); } ::-webkit-scrollbar-thumb { background:var(--border-color); border-radius:var(--radius-full); } ::-webkit-scrollbar-thumb:hover { background:var(--primary); }
 
-        /* Barre latérale gauche façon YouTube Music (desktop) */
+        /* YouTube Music-style left sidebar (desktop) */
         header { display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; gap:8px; padding:25px 16px; background:var(--header-bg); backdrop-filter:blur(15px); border-right:1px solid rgba(var(--border-color-rgb),.5); border-bottom:none; position:fixed; top:70px; left:0; z-index:100; width:260px; height:calc(100vh - 70px - 72px); box-sizing:border-box; overflow-y:auto; overflow-x:hidden; transition:width .3s cubic-bezier(.2,.8,.2,1),padding .3s cubic-bezier(.2,.8,.2,1); }
         nav { display:flex; flex-direction:column; gap:4px; margin-left:0; flex-grow:1; width:100%; }
         nav span { display:flex; align-items:center; gap:14px; cursor:pointer; font-weight:600; color:var(--text-muted); transition:.3s; white-space:nowrap; padding:12px 14px; border-radius:var(--radius-sm); width:100%; box-sizing:border-box; }
@@ -704,7 +719,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .header-actions { display:flex; flex-direction:column; gap:10px; align-items:stretch; width:100%; margin-top:auto; padding-top:20px; border-top:1px solid rgba(255,255,255,.05); }
         .btn-icon { flex-shrink:0; }
 
-        /* Repli de la barre latérale gauche : icônes seules, libellés masqués */
+        /* Collapsed left sidebar: icons only, labels hidden */
         #sidebar-toggle { position:fixed; top:96px; left:246px; z-index:5010; width:28px; height:28px; border-radius:50%; background:var(--elevated-bg); border:1px solid var(--border-color); color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:left .3s cubic-bezier(.2,.8,.2,1),transform .3s cubic-bezier(.2,.8,.2,1); }
         #sidebar-toggle:hover { color:var(--text); border-color:var(--accent); }
         body.sidebar-collapsed { padding-left:88px; }
@@ -722,17 +737,17 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .btn-primary:hover { filter:brightness(1.15); }
         .btn-outline { background:transparent; border:1px solid var(--primary); color:var(--accent); }
         .btn-outline:hover { background:rgba(var(--primary-rgb),.1); }
-        .btn-danger { background:rgba(255,71,87,.1); color:var(--danger); font-size:.75em; border:1px solid rgba(255,71,87,.3); padding:6px 12px; }
+        .btn-danger { background:rgba(var(--danger-rgb),.1); color:var(--danger); font-size:.75em; border:1px solid rgba(var(--danger-rgb),.3); padding:6px 12px; }
         .lang-switch { display:flex; align-items:center; border:1px solid rgba(255,255,255,.1); border-radius:var(--radius-full); overflow:hidden; flex-shrink:0; }
         .lang-switch a { padding:8px 12px; font-size:.78em; font-weight:700; color:var(--text-muted); text-decoration:none; transition:.2s; }
         .lang-switch a.active { background:var(--primary); color:#fff; }
         .lang-switch a:not(.active):hover { color:var(--text); background:rgba(255,255,255,.05); }
 
         main { padding:30px; max-width:1600px; margin:auto; }
-        /* Colonne de lecture pour les pages Réglages/Admin : un formulaire de
-           réglages en pleine largeur (1600px) serait illisible (champs texte
-           et color-pickers étirés sur toute la largeur) ; on garde le confort
-           de lecture d'une carte de modale sans revenir à une pop-up. */
+        /* Reading column for the Settings/Admin pages: a full-width (1600px)
+           settings form would be unreadable (text fields and color pickers
+           stretched across the whole width); we keep the reading comfort of a
+           modal card without going back to a pop-up. */
         .settings-page-wrap { max-width:600px; margin:0 auto; }
         .controls-container { display:flex; align-items:center; justify-content:space-between; gap:15px; margin-bottom:25px; }
         .section-title { border-left:5px solid var(--primary); padding-left:15px; margin-bottom:20px; font-size:1.5em; border-radius:2px; }
@@ -742,16 +757,16 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .search-input:focus { border-color:var(--accent); background:var(--elevated-bg); box-shadow:0 0 0 3px rgba(var(--accent-rgb),.2); }
         .search-input::placeholder { color:var(--text-muted); }
 
-        /* Barre supérieure du contenu : nom de l'app + recherche, toujours visible (sticky) */
+        /* Content top bar: app name + search, always visible (sticky) */
         #content-topbar { position:fixed; top:0; left:0; width:100%; height:70px; z-index:110; box-sizing:border-box; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:25px; padding:0 30px; background:var(--header-bg); backdrop-filter:blur(15px); border-bottom:1px solid rgba(var(--border-color-rgb),.5); }
         .topbar-appname { grid-column:1; justify-self:start; font-weight:800; font-size:1.3em; color:var(--accent); white-space:nowrap; letter-spacing:-.5px; flex-shrink:0; }
         .topbar-search { grid-column:2; justify-self:center; width:480px; max-width:90vw; position:relative; }
-        /* La règle générique "input[type=text],..." (formulaires des modales, plus
-           bas) a une spécificité égale ou supérieure à .search-input seule et est
-           déclarée après elle dans la feuille de style : sans ces resets explicites
-           (spécificité plus élevée grâce à .topbar-search .search-input), elle lui
-           imposait sa marge (10px/20px, qui décentrait le bouton ✕), son padding,
-           son border-radius et son fond — cassant la pilule de recherche voulue. */
+        /* The generic "input[type=text],..." rule (modal forms, further
+           down) has equal or higher specificity than .search-input alone and is
+           declared after it in the stylesheet: without these explicit resets
+           (higher specificity thanks to .topbar-search .search-input), it
+           imposed its margin (10px/20px, which off-centered the ✕ button), its padding,
+           its border-radius and its background — breaking the intended search pill. */
         .topbar-search .search-input { height:44px; margin:0; padding:0 40px 0 25px; border-radius:50px; background:var(--search-bg); }
         .search-clear-btn { display:none; position:absolute; right:6px; top:50%; transform:translateY(-50%); width:28px; height:28px; padding:0; align-items:center; justify-content:center; background:none; border:none; cursor:pointer; color:var(--text-muted); border-radius:50%; }
         .search-clear-btn.visible { display:flex; }
@@ -778,7 +793,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .pl-icon-btn:disabled:hover { background:none; color:var(--text-muted); }
         #load-more-trigger { height:40px; text-align:center; color:var(--text-muted); padding-top:15px; font-size:.9em; }
 
-        /* Carrousels d'accueil (Recommandé / Populaire / Pépites cachées) */
+        /* Home carousels (Recommended / Popular / Hidden gems) */
         .carousel-section { margin-bottom:35px; }
         .carousel-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:15px; gap:15px; }
         .carousel-title { font-size:1.3em; font-weight:800; margin:0; border-left:5px solid var(--primary); padding-left:15px; border-radius:2px; }
@@ -800,11 +815,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .carousel-card .cc-title { font-weight:700; font-size:.9em; margin-top:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .carousel-card .cc-artist { font-size:.78em; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-        /* Anime les pochettes tant qu'elles n'ont pas fini de charger (au lieu
-           d'un carré plat/transparent) et les squelettes de cartes affichés
-           pendant qu'on attend encore les données (ex: action=recommend) —
-           même dégradé qui glisse, pour que les deux étapes s'enchaînent
-           visuellement sans à-coup. */
+        /* Animates covers until they have finished loading (instead of
+           a flat/transparent square) and the card skeletons shown
+           while we are still waiting for data (e.g. action=recommend) —
+           the same sliding gradient, so the two steps flow into each other
+           visually without a jolt. */
         @keyframes coverShimmer { 0%{background-position:-135% 0} 100%{background-position:135% 0} }
         .carousel-card img.cc-loading,
         .carousel-card .cc-cover-skeleton,
@@ -839,7 +854,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .artist-bio a { color:var(--accent); text-decoration:none; }
         .artist-bio a:hover { text-decoration:underline; }
 
-        /* Carrousel de genres (filtre les 3 carrousels du bas) */
+        /* Genre carousel (filters the 3 carousels below) */
         .genre-pill-track { display:flex; gap:10px; overflow-x:auto; scroll-behavior:smooth; padding:2px 2px 16px; scrollbar-width:thin; scrollbar-color:var(--border-color) transparent; }
         .genre-pill-track::-webkit-scrollbar { height:6px; }
         .genre-pill-track::-webkit-scrollbar-track { background:transparent; }
@@ -864,17 +879,17 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .queue-item.active { background:rgba(var(--primary-rgb),.15); border-color:var(--primary); }
         .queue-item:hover { background:rgba(255,255,255,.05); }
 
-        /* Barre de lecture façon YouTube Music : liseré de progression collé au
-           bord supérieur (pleine largeur), puis une ligne à trois zones —
-           transport+temps à gauche, pochette/titre centrés, volume+options à
-           droite — identique en mode normal (#player-bar) et plein écran
-           (.fp-bottombar), qui partagent les mêmes classes .pb-*. */
+        /* YouTube Music-style playback bar: progress line stuck to the
+           top edge (full width), then a row with three zones —
+           transport+time on the left, cover/title centered, volume+options on the
+           right — identical in normal mode (#player-bar) and fullscreen
+           (.fp-bottombar), which share the same .pb-* classes. */
         #player-bar { position:fixed; bottom:0; left:0; width:100%; height:72px; background:var(--player-bg); backdrop-filter:blur(20px) saturate(180%); padding:0 24px; border-radius:0; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; column-gap:20px; z-index:1000; border-top:1px solid rgba(255,255,255,.1); box-shadow:0 -4px 20px rgba(0,0,0,.3); box-sizing:border-box; cursor:pointer; }
-        /* Le lecteur plein écran a sa propre barre du bas (.fp-bottombar) qui
-           occupe exactement le même rectangle ; sans cette règle, la barre
-           mini restait quand même affichée dessous et, comme .fp-bottombar
-           n'est pas totalement opaque, on voyait les deux se superposer
-           (double affichage du chrono, pochette qui se mélange). */
+        /* The fullscreen player has its own bottom bar (.fp-bottombar) that
+           takes up exactly the same rectangle; without this rule, the mini
+           bar still stayed displayed underneath and, since .fp-bottombar
+           is not fully opaque, you could see both overlapping
+           (double timer display, covers blending together). */
         #player-bar:has(~ #full-player.active) { display:none; }
         .progress-bg.pb-seek { position:absolute; top:0; left:0; width:100%; height:3px; border-radius:0; z-index:2; }
         .pb-seek .progress-fill { border-radius:0; }
@@ -887,11 +902,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .progress-bg { background:rgba(255,255,255,.1); height:6px; border-radius:10px; cursor:pointer; position:relative; overflow:hidden; }
         .progress-fill { background:linear-gradient(90deg,var(--primary),var(--accent)); height:100%; width:0%; border-radius:10px; }
         .control-btn { background:none; border:none; color:var(--player-text); cursor:pointer; opacity:.8; transition:.2s; padding:8px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-        /* #loopBtn n'avait pas position:relative contrairement à #fp-loopBtn :
-           .loop-badge (position:absolute) remontait alors jusqu'à #player-bar
-           (le prochain ancêtre positionné) au lieu de se coller au bouton,
-           faisant apparaître le badge "1"/répétition à un endroit différent
-           entre la barre normale et le lecteur plein écran. */
+        /* #loopBtn did not have position:relative unlike #fp-loopBtn:
+           .loop-badge (position:absolute) then climbed up to #player-bar
+           (the next positioned ancestor) instead of sticking to the button,
+           making the "1"/repeat badge appear in a different spot
+           between the normal bar and the fullscreen player. */
         #loopBtn, #fp-loopBtn { position:relative; }
         .control-btn svg { width:20px; height:20px; fill:var(--player-text); display:block; transition:transform .15s ease; }
         .control-btn:hover { background:rgba(255,255,255,.1); opacity:1; }
@@ -901,10 +916,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .control-btn.active::after { content:''; position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:4px; height:4px; background:var(--accent); border-radius:50%; }
         .loop-badge { display:none; position:absolute; top:-2px; right:-2px; width:14px; height:14px; border-radius:50%; background:var(--accent); color:var(--bg-dark); font-size:9px; font-weight:800; line-height:1; align-items:center; justify-content:center; font-family:system-ui,sans-serif; box-shadow:0 0 0 2px var(--bg-panel); }
         .loop-badge.show { display:flex; }
-        /* opacity:1 explicite : #fp-masterPlay porte aussi la classe .control-btn
-           (pour l'icône 18px partagée via .fp-bb-play), qui met opacity:.8 — sans
-           ce reset, le rond blanc du lecteur plein écran paraissait plus terne/
-           grisé que celui du mini-lecteur (qui n'a pas cette classe). */
+        /* Explicit opacity:1: #fp-masterPlay also has the .control-btn class
+           (for the 18px icon shared via .fp-bb-play), which sets opacity:.8 — without
+           this reset, the white circle of the fullscreen player looked duller/
+           greyer than the mini player's one (which doesn't have this class). */
         #masterPlay, #fp-masterPlay { background:white; border:none; width:38px; height:38px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; opacity:1; transition:transform .2s,box-shadow .2s; box-shadow:0 0 20px rgba(255,255,255,.3); flex-shrink:0; }
         #masterPlay:hover, #fp-masterPlay:hover { background:white; opacity:1; transform:scale(1.1); box-shadow:0 0 30px rgba(255,255,255,.5); }
         #masterPlay:active, #fp-masterPlay:active { transform:scale(.9); }
@@ -913,10 +928,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         input[type=range].vol-slider { -webkit-appearance:none; width:100%; height:4px; background:linear-gradient(90deg,var(--accent) 100%,rgba(255,255,255,.2) 100%); border-radius:5px; outline:none; cursor:pointer; }
         input[type=range].vol-slider::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:12px; background:#fff; border-radius:50%; cursor:pointer; transition:.2s; }
 
-        /* Au-dessus de #full-player (z-index:5000, .fp-bottombar:5001,
-           #sidebar-toggle:5010) : sinon les modales (Mix, Upload, etc.)
-           s'ouvrent visuellement derrière le lecteur plein écran quand il
-           est actif. */
+        /* Above #full-player (z-index:5000, .fp-bottombar:5001,
+           #sidebar-toggle:5010): otherwise modals (Mix, Upload, etc.)
+           visually open behind the fullscreen player when it
+           is active. */
         .modal { display:none; position:fixed; z-index:6000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,.6); backdrop-filter:blur(8px); opacity:0; transition:opacity .25s ease; }
         .modal.show { opacity:1; }
         .modal-content { background:var(--modal-bg); margin:5% auto; padding:30px; width:90%; max-width:550px; border-radius:28px; border:1px solid rgba(255,255,255,.1); box-shadow:0 25px 80px rgba(0,0,0,.5); max-height:85vh; overflow-y:auto; transform:scale(.9); opacity:0; transition:transform .25s cubic-bezier(.175,.885,.32,1.275),opacity .25s ease; }
@@ -974,21 +989,21 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .lyric-line.active { color:var(--player-text); font-size:1.25em; }
         .lyrics-status { color:rgba(255,255,255,.6); margin-top:20px; padding:0 10px; text-align:center; }
 
-        /* Lecteur plein écran façon YouTube Music : pochette centrée à gauche,
-           panneau "File d'attente / Paroles" à droite (toujours visible en
-           desktop), barre de contrôle pleine largeur en bas. La barre latérale
-           reste visible à gauche (le lecteur ne recouvre que la zone de contenu). */
+        /* YouTube Music-style fullscreen player: cover centered on the left,
+           "Queue / Lyrics" panel on the right (always visible on
+           desktop), full-width control bar at the bottom. The sidebar
+           stays visible on the left (the player only covers the content area). */
         #full-player { position:fixed; top:100%; left:260px; width:calc(100% - 260px); height:calc(100% - 70px); background:radial-gradient(circle at top right,var(--fp-gradient-1),var(--fp-gradient-2)); z-index:5000; transition:top .4s cubic-bezier(.2,.8,.2,1),left .3s cubic-bezier(.2,.8,.2,1),width .3s cubic-bezier(.2,.8,.2,1); display:flex; flex-direction:column; box-sizing:border-box; color:var(--player-text); overflow:hidden; }
         #full-player.active { top:70px; }
-        /* Pendant l'animation de fermeture, on repasse sous #player-bar (z-index
-           900 < 1000) pour que le panneau glisse "sous" la barre de lecture
-           mini au lieu de la recouvrir pendant sa descente hors écran. */
+        /* During the closing animation, we go back under #player-bar (z-index
+           900 < 1000) so the panel slides "under" the mini playback bar
+           instead of covering it while it moves off screen. */
         #full-player.closing { z-index:900; }
         body.sidebar-collapsed #full-player { left:88px; width:calc(100% - 88px); }
 
-        /* Fond ambiant : la pochette de la piste en cours, floutée et assombrie,
-           façon Spotify/Apple Music — remplace le dégradé de thème fixe dès
-           qu'une pochette est chargée. */
+        /* Ambient background: the current track's cover, blurred and darkened,
+           Spotify/Apple Music style — replaces the fixed theme gradient as soon as
+           a cover is loaded. */
         #fp-bg { position:absolute; inset:-60px; z-index:0; overflow:hidden; }
         #fp-bg-img { width:100%; height:100%; object-fit:cover; filter:blur(50px) saturate(1.4) brightness(.55); transform:scale(1.15); opacity:0; transition:opacity .8s ease; }
         #fp-bg-img.loaded { opacity:1; }
@@ -1004,11 +1019,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .fp-art-container { width:100%; max-width:560px; }
         #fp-cover { width:100%; height:auto; aspect-ratio:1/1; object-fit:cover; border-radius:8px; box-shadow:0 20px 60px rgba(0,0,0,.5); display:block; }
 
-        /* transform:translateZ(0) force Safari/WebKit à mettre ce panneau flouté
-           (backdrop-filter) sur sa propre couche de composition : sans ça, un
-           changement de contenu (paroles chargées/absentes) peut ne pas être
-           repeint et la barre d'onglets Queue/Paroles reste visuellement figée
-           (invisible) jusqu'au prochain repaint forcé par autre chose. */
+        /* transform:translateZ(0) forces Safari/WebKit to put this blurred panel
+           (backdrop-filter) on its own compositing layer: without it, a
+           content change (lyrics loaded/missing) may not be
+           repainted and the Queue/Lyrics tab bar stays visually frozen
+           (invisible) until the next repaint forced by something else. */
         #fp-sidebar { width:400px; flex-shrink:0; background:rgba(0,0,0,.25); backdrop-filter:blur(20px); border-left:1px solid rgba(255,255,255,.08); box-sizing:border-box; overflow:hidden; display:flex; flex-direction:column; transition:width .3s cubic-bezier(.2,.8,.2,1); transform:translateZ(0); -webkit-transform:translateZ(0); }
         .fp-sidebar-tabs { display:flex; align-items:center; flex-shrink:0; border-bottom:1px solid rgba(255,255,255,.08); transform:translateZ(0); }
         .fp-tab-btn { flex:1; background:none; border:none; padding:20px 10px; color:var(--player-text); opacity:.55; cursor:pointer; font-weight:700; font-size:.75em; letter-spacing:1px; text-transform:uppercase; white-space:nowrap; border-bottom:2px solid transparent; transition:.2s; }
@@ -1020,11 +1035,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         .fp-tab-pane { display:none; }
         .fp-tab-pane.active { display:block; }
 
-        /* Barre de contrôle pleine largeur en bas (façon YouTube Music) : détachée
-           du conteneur #full-player (qui s'arrête à droite de la barre latérale)
-           pour occuper toute la largeur de l'écran, exactement comme #player-bar
-           en mode normal. Cachée par défaut ; affichée uniquement quand le lecteur
-           plein écran est actif, via le sélecteur #full-player.active ci-dessous. */
+        /* Full-width control bar at the bottom (YouTube Music style): detached
+           from the #full-player container (which stops to the right of the sidebar)
+           to take up the whole screen width, exactly like #player-bar
+           in normal mode. Hidden by default; only shown when the fullscreen
+           player is active, via the #full-player.active selector below. */
         .fp-bottombar { position:fixed; left:0; bottom:0; width:100%; height:72px; display:none; grid-template-columns:1fr auto 1fr; align-items:center; column-gap:20px; padding:0 24px; border-top:1px solid rgba(255,255,255,.1); background:var(--player-bg); backdrop-filter:blur(20px) saturate(180%); box-sizing:border-box; z-index:5001; cursor:pointer; }
         #full-player.active .fp-bottombar { display:grid; }
         .fp-bb-track { display:flex; align-items:center; gap:12px; justify-self:center; max-width:320px; min-width:0; overflow:hidden; cursor:pointer; }
@@ -1177,7 +1192,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
 <?php if ($is_admin): ?>
 <main id="admin-page" style="display:none;">
-    <h2 class="section-title" style="margin-bottom:25px;color:#e67e22;"><?php echo htmlspecialchars(t('admin_title')); ?></h2>
+    <h2 class="section-title" style="margin-bottom:25px;"><?php echo htmlspecialchars(t('admin_title')); ?></h2>
+    <!-- Target of the genre ✕ buttons (form="delete-genre-form"): HTML forms
+    can't be nested inside the admin settings form below. -->
+    <form id="delete-genre-form" method="post" action="?page=admin-page">
+        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
+    </form>
     <div class="settings-page-wrap">
         <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
@@ -1234,7 +1254,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                         <?php foreach ($genresList as $g): ?>
                             <div class="adm-genre-item">
                                 <span><?php echo htmlspecialchars(fixEntities($g)); ?></span>
-                                <a href="?delete_genre=<?php echo urlencode($g); ?>&page=admin-page" style="color:var(--danger);text-decoration:none;font-weight:bold;" onclick="return confirm('<?php echo htmlspecialchars(t('confirm_delete_genre'), ENT_QUOTES); ?>')">✕</a>
+                                <button type="submit" form="delete-genre-form" name="delete_genre" value="<?php echo htmlspecialchars($g); ?>" style="color:var(--danger);background:none;border:none;padding:0;cursor:pointer;font:inherit;font-weight:bold;" onclick="return confirm('<?php echo htmlspecialchars(t('confirm_delete_genre'), ENT_QUOTES); ?>')">✕</button>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -1451,7 +1471,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg><?php echo htmlspecialchars(t('mobnav_mixes')); ?>
     </button>
     <?php if ($is_admin): ?>
-        <button class="mob-nav-item" id="mob-nav-admin-page" onclick="showSection('admin-page')" style="color:#e67e22;">
+        <button class="mob-nav-item" id="mob-nav-admin-page" onclick="showSection('admin-page')">
             <svg viewBox="0 0 24 24"><path d="M19.4 13c0-.3.1-.6.1-1s0-.7-.1-1l2.1-1.7c.2-.2.2-.4.1-.6l-2-3.5c-.1-.2-.3-.3-.6-.2l-2.5 1c-.5-.4-1.1-.7-1.7-1l-.4-2.7c0-.2-.2-.4-.5-.4h-4c-.3 0-.5.2-.5.4l-.4 2.7c-.6.2-1.2.6-1.7 1l-2.5-1c-.2-.1-.5 0-.6.2l-2 3.5c-.1.2-.1.5.1.6L4.6 11c-.1.3-.1.6-.1 1s0 .7.1 1l-2.1 1.7c-.2.2-.2.4-.1.6l2 3.5c.1.2.3.3.6.2l2.5-1c.5.4 1.1.7 1.7 1l.4 2.7c0 .2.2.4.5.4h4c.3 0 .5-.2.5-.4l.4-2.7c.6-.2 1.2-.6 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.5c.1-.2.1-.5-.1-.6L19.4 13zM12 15.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z"/></svg><?php echo htmlspecialchars(t('mobnav_admin')); ?>
         </button>
     <?php endif; ?>
@@ -1472,6 +1492,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
         <p style="color:var(--text-muted);font-size:.9em;margin-bottom:10px;"><?php echo htmlspecialchars(t('settings_theme_label')); ?></p>
         <div class="theme-swatch-grid" id="theme-swatch-grid"></div>
+        <div id="adaptive-fallback-section" style="display:none;">
+            <p style="color:var(--text-muted);font-size:.9em;margin-bottom:10px;"><?php echo htmlspecialchars(t('settings_adaptive_fallback_label')); ?></p>
+            <div class="theme-swatch-grid" id="adaptive-fallback-grid"></div>
+        </div>
 
         <p style="color:var(--text-muted);font-size:.9em;margin-bottom:20px;"><?php echo htmlspecialchars(t('settings_hide_genres_pre')); ?> <strong style="color:var(--danger);"><?php echo htmlspecialchars(t('settings_hide_genres_word')); ?></strong> :</p>
         <div class="settings-grid">
@@ -1569,9 +1593,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     </form>
 </div></div>
 
-<!-- Menu contextuel "⋮" partagé par toutes les lignes de piste (bibliothèque,
-     artiste, album, historique, playlist) : un seul élément repositionné et
-     re-rendu selon la piste cliquée, plutôt qu'un menu par ligne. -->
+<!-- "⋮" context menu shared by all track rows (library,
+     artist, album, history, playlist): a single element repositioned and
+     re-rendered for the clicked track, rather than one menu per row. -->
 <div id="track-ctx-menu" class="track-ctx-menu" role="menu"></div>
 
 <div id="playlistModal" class="modal"><div class="modal-content">
@@ -1811,13 +1835,13 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     const ALL_PLAYLISTS    = <?php echo json_encode($all_playlists, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
     const CURRENT_USER_ID  = <?php echo json_encode($user_id); ?>;
     const IS_ADMIN         = <?php echo json_encode($is_admin); ?>;
-    // Couleurs par défaut du site (panneau admin), utilisées uniquement pour
-    // afficher un aperçu fidèle du swatch "Site (Défaut)" dans le thème.
+    // Site default colors (admin panel), only used to
+    // show an accurate preview of the "Site (Default)" swatch in the theme picker.
     const SERVER_PRIMARY   = <?php echo json_encode($color_primary); ?>;
     const SERVER_ACCENT    = <?php echo json_encode($color_accent); ?>;
-    // Identifiants réinjectés côté client pour parler directement à api.php,
-    // exactement comme le fait le client Android (PurpleClient.postRequest) :
-    // api.php n'a pas de session, chaque appel authentifié doit les fournir.
+    // Credentials re-injected on the client to talk directly to api.php,
+    // exactly like the Android client does (PurpleClient.postRequest):
+    // api.php has no session, every authenticated call must provide them.
     const API_AUTH = {
         username: <?php echo json_encode($username); ?>,
         password: <?php echo json_encode($api_pw); ?>
@@ -1856,34 +1880,34 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     let currentPlaylistId = null; let currentSection = 'accueil'; let currentArtistName = null; let currentAlbumId = null; let currentViewedPlaylist = null;
     let currentHistoryTracks = [];
 
-    // ── Moteur de file d'attente contextuelle ──────────────────────────────
-    // Une file dynamique/à continuation ne doit jamais sembler courte : on
-    // vise en permanence au moins ~150 morceaux à venir (comme un "Up Next"
-    // de service de streaming), remplis dès qu'on approche du bout plutôt que
-    // tout générer d'un coup. Sur une petite bibliothèque, buildContextualBatch
-    // renvoie simplement moins que demandé (elle ne peut pas inventer des
-    // morceaux) — usedTrackIds empêche alors toute redite au sein d'un lot.
+    // ── Contextual queue engine ──────────────────────────────────────────
+    // A dynamic/continuation queue must never feel short: we
+    // always aim for at least ~150 upcoming tracks (like a streaming
+    // service's "Up Next"), filled as we get close to the end rather than
+    // generating everything at once. On a small library, buildContextualBatch
+    // simply returns fewer than requested (it can't invent
+    // tracks) — usedTrackIds then prevents any repeat within a batch.
     const QUEUE_AHEAD_TARGET = 150;
     const QUEUE_REFILL_THRESHOLD = 30;
-    // queueMode : 'library' (ordre/tri de la bibliothèque figé, jamais de
-    // recommandation) | 'fixed' (album/playlist/historique : liste explicite,
-    // éventuellement suivie d'une continuation dynamique pour les albums) |
-    // 'dynamic' (recherche/carrousel/artiste : file générée et complétée en continu).
+    // queueMode: 'library' (fixed library order/sort, never any
+    // recommendation) | 'fixed' (album/playlist/history: explicit list,
+    // optionally followed by a dynamic continuation for albums) |
+    // 'dynamic' (search/carousel/artist: queue generated and continuously topped up).
     let queueMode = 'library';
-    // Borne de bouclage pour le mode repeat-queue : le loop ne doit reboucler
-    // que sur la partie "contexte" (ex: les pistes de l'album), jamais sur la
-    // continuation générée ajoutée après. null = boucle sur la file entière.
+    // Loop boundary for repeat-queue mode: the loop must only wrap
+    // over the "context" part (e.g. the album's tracks), never over the
+    // generated continuation appended after it. null = loop over the whole queue.
     let loopBoundary = null;
-    // Une playlist/historique est aussi en queueMode 'fixed' mais ne doit
-    // JAMAIS recevoir de continuation générée (contrairement à un album) —
-    // ce booléen est ce qui distingue les deux pour refillQueueIfNeeded(),
-    // queueMode seul ne suffisant pas à faire la différence.
+    // A playlist/history is also in queueMode 'fixed' but must
+    // NEVER receive a generated continuation (unlike an album) —
+    // this boolean is what tells the two apart for refillQueueIfNeeded(),
+    // since queueMode alone is not enough to make the distinction.
     let queueAllowsContinuation = false;
-    // Ids déjà placés dans la file dynamique en cours, pour ne pas retirer un
-    // morceau déjà proposé lors d'un remplissage incrémental suivant.
+    // Ids already placed in the current dynamic queue, so a track
+    // already suggested isn't picked again during a later incremental refill.
     let usedTrackIds = new Set();
-    // Cache mémoire (par session) du profil d'affinité de l'utilisateur
-    // (genre/artiste/album), chargé une seule fois depuis action=user_affinity.
+    // In-memory (per session) cache of the user's affinity profile
+    // (genre/artist/album), loaded only once from action=user_affinity.
     let userAffinityCache = null;
     let userAffinityPromise = null;
 
@@ -1905,10 +1929,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         return userAffinityPromise;
     }
 
-    // Tirage aléatoire pondéré sans remise (méthode des clés exponentielles) :
-    // chaque item reçoit une clé -ln(rand())/poids, on garde les n plus
-    // petites clés. Un poids plus élevé augmente la probabilité de tirage
-    // sans jamais la garantir — remplace un tri par score classique.
+    // Weighted random sampling without replacement (exponential keys method):
+    // each item gets a key -ln(rand())/weight, we keep the n
+    // smallest keys. A higher weight increases the chance of being picked
+    // without ever guaranteeing it — replaces a classic score sort.
     function weightedSampleWithoutReplacement(items, weightFn, n) {
         const keyed = items.map(item => {
             const w = Math.max(weightFn(item), 0.0001);
@@ -1920,7 +1944,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     }
 
     function scoreCandidate(track, seedTrack, affinity) {
-        let score = 1; // base pour que même un morceau sans aucun signal reste tirable
+        let score = 1; // base so that even a track with no signal at all can still be picked
         if (seedTrack) {
             if (track.artist === seedTrack.artist) score += 30;
             if ((track.genre || 'Autre') === (seedTrack.genre || 'Autre')) score += 12;
@@ -1932,13 +1956,13 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             score += (affinity.album[track.album_id] || 0) * 4;
         }
         score += Math.log(1 + (parseInt(track.play_count) || 0)) * 1.2;
-        score += Math.random() * 6; // exploration aléatoire
+        score += Math.random() * 6; // random exploration
         return score;
     }
 
-    // Fusionne les tranches par seau (même artiste / genre lié / découverte /
-    // aléatoire pur) en évitant de placer deux fois de suite le même artiste,
-    // et en évitant si possible l'artiste utilisé dans les 2-3 derniers choix.
+    // Merges the slices per bucket (same artist / related genre / discovery /
+    // pure random) while avoiding placing the same artist twice in a row,
+    // and avoiding, if possible, the artist used in the last 2-3 picks.
     function interleaveAvoidingRepeats(buckets, seedArtist) {
         const pools = buckets.map(b => [...b]);
         const result = [];
@@ -1946,13 +1970,13 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         let remaining = pools.reduce((n, p) => n + p.length, 0);
         while (remaining > 0) {
             let pickedPoolIdx = -1, pickedItemIdx = -1;
-            // 1ère passe : chercher un morceau d'un artiste absent des 3 derniers choix
+            // 1st pass: look for a track by an artist absent from the last 3 picks
             for (let p = 0; p < pools.length && pickedPoolIdx === -1; p++) {
                 for (let i = 0; i < pools[p].length; i++) {
                     if (!recentArtists.slice(-3).includes(pools[p][i].artist)) { pickedPoolIdx = p; pickedItemIdx = i; break; }
                 }
             }
-            // 2ème passe (repli) : juste éviter l'artiste immédiatement précédent
+            // 2nd pass (fallback): just avoid the immediately preceding artist
             if (pickedPoolIdx === -1) {
                 for (let p = 0; p < pools.length && pickedPoolIdx === -1; p++) {
                     for (let i = 0; i < pools[p].length; i++) {
@@ -1960,7 +1984,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                     }
                 }
             }
-            // 3ème passe : plus aucune alternative, on prend ce qu'il reste
+            // 3rd pass: no alternative left, take whatever remains
             if (pickedPoolIdx === -1) {
                 for (let p = 0; p < pools.length; p++) { if (pools[p].length) { pickedPoolIdx = p; pickedItemIdx = 0; break; } }
             }
@@ -1972,12 +1996,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         return result;
     }
 
-    // Construit un lot de morceaux "pertinents mais surprenants" à partir de
-    // ALL_MUSIC_DATA, mélangeant plusieurs sources de candidats autour de
-    // seedTrack : ~30% même artiste, ~30% genre/goût lié, ~25% découverte
-    // (affinité personnelle + popularité, hors même artiste/genre), ~15%
-    // complètement aléatoire. Le tirage est pondéré (pas un tri déterministe),
-    // donc deux appels avec la même seed ne donnent jamais exactement la même file.
+    // Builds a batch of "relevant but surprising" tracks from
+    // ALL_MUSIC_DATA, mixing several candidate sources around
+    // seedTrack: ~30% same artist, ~30% related genre/taste, ~25% discovery
+    // (personal affinity + popularity, excluding same artist/genre), ~15%
+    // completely random. The draw is weighted (not a deterministic sort),
+    // so two calls with the same seed never give exactly the same queue.
     async function buildContextualBatch(seedTrack, excludeIds, count) {
         const affinity = await getUserAffinity();
         const pool = ALL_MUSIC_DATA.filter(t => !excludeIds.has(t.id) &&
@@ -2007,9 +2031,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         const randomPool = rest.filter(t => !usedSoFar.has(t.id));
         const pickRandom = weightedSampleWithoutReplacement(randomPool, () => 1, Math.min(quotas.random, randomPool.length));
 
-        // Si un seau est en sous-effectif (petite bibliothèque, artiste peu
-        // fourni...), on comble avec ce qu'il reste ailleurs plutôt que de
-        // renvoyer un lot plus court que demandé.
+        // If a bucket is understaffed (small library, artist with few
+        // tracks...), we fill in with what's left elsewhere rather than
+        // returning a shorter batch than requested.
         let chosen = [...pickSameArtist, ...pickRelated, ...pickDiscovery, ...pickRandom];
         if (chosen.length < count) {
             const chosenIds = new Set(chosen.map(t => t.id));
@@ -2021,9 +2045,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         return interleaveAvoidingRepeats([chosen], seedTrack ? seedTrack.artist : null);
     }
 
-    // Réordonne une file existante (album/playlist/bibliothèque) façon
-    // "shuffle" tout en évitant les répétitions d'artiste consécutives :
-    // Fisher-Yates classique puis passe de réparation par échanges locaux.
+    // Reorders an existing queue (album/playlist/library)
+    // "shuffle"-style while avoiding consecutive artist repeats:
+    // classic Fisher-Yates followed by a repair pass using local swaps.
     function weightedAntiRepeatShuffle(list) {
         const arr = shuffleArray([...list]);
         for (let i = 1; i < arr.length; i++) {
@@ -2038,26 +2062,26 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         return arr;
     }
 
-    // Un seul verrou partagé entre le remplissage incrémental et la
-    // construction initiale d'une file dynamique/fixe+continuation
-    // (buildDynamicQueue / buildFixedQueueWithContinuation) : sans lui,
-    // loadTrack() déclenche refillQueueIfNeeded() dès que la file ne contient
-    // que le morceau seed (donc juste sous le seuil), en même temps que
-    // l'appel de construction initiale récupère lui aussi un lot — les deux
-    // partent alors du même usedTrackIds pas encore mis à jour et peuvent
-    // choisir les mêmes morceaux, d'où des doublons dans la file.
+    // A single lock shared between the incremental refill and the
+    // initial build of a dynamic/fixed+continuation queue
+    // (buildDynamicQueue / buildFixedQueueWithContinuation): without it,
+    // loadTrack() triggers refillQueueIfNeeded() as soon as the queue only
+    // contains the seed track (so just under the threshold), at the same time
+    // as the initial build call also fetches a batch — both then
+    // start from the same not-yet-updated usedTrackIds and may
+    // pick the same tracks, hence duplicates in the queue.
     let queueBatchInFlight = false;
     async function refillQueueIfNeeded() {
         if (!queueAllowsContinuation || queueBatchInFlight) return;
         const remaining = queue.length - 1 - currentIndex;
         if (remaining > QUEUE_REFILL_THRESHOLD) return;
-        if (loopMode === 1 && loopBoundary != null) return; // on boucle sur le contexte, pas besoin de compléter
+        if (loopMode === 1 && loopBoundary != null) return; // we loop over the context, no need to top up
         queueBatchInFlight = true;
         try {
             const lastTrack = queue[queue.length - 1];
-            // Complète jusqu'à retrouver ~QUEUE_AHEAD_TARGET morceaux à venir,
-            // pas juste un petit lot fixe, pour que la file ne semble jamais
-            // sur le point de s'arrêter.
+            // Tops up until there are ~QUEUE_AHEAD_TARGET upcoming tracks again,
+            // not just a small fixed batch, so the queue never feels
+            // about to stop.
             const need = Math.max(QUEUE_AHEAD_TARGET - remaining, QUEUE_REFILL_THRESHOLD);
             const batch = await buildContextualBatch(lastTrack, usedTrackIds, need);
             if (!batch.length) return;
@@ -2070,33 +2094,42 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         }
     }
     let hiddenGenres = JSON.parse(localStorage.getItem('hiddenGenres') || '[]');
-    // Préférence personnelle d'un admin pour alléger SA propre navigation —
-    // ne change rien côté serveur (is_admin reste la seule source d'autorité
-    // pour les actions admin), juste l'affichage de l'entrée dans SON menu.
+    // An admin's personal preference to declutter THEIR own navigation —
+    // changes nothing on the server (is_admin remains the only authority
+    // for admin actions), just the display of the entry in THEIR menu.
     let hideAdminPanel = (localStorage.getItem('hideAdminPanel') === '1');
-    // Préférence d'affichage générale (pas admin-only, contrairement à
-    // hideAdminPanel) : masque les boutons ✎/✕ sur TOUTES les pistes, y
-    // compris celles de l'utilisateur lui-même — pour une vue épurée en
-    // lecture seule. N'affecte que le rendu ; edit_track/delete_track côté
-    // serveur continuent de vérifier l'appartenance/is_admin indépendamment.
+    // General display preference (not admin-only, unlike
+    // hideAdminPanel): hides the ✎/✕ buttons on ALL tracks,
+    // including the user's own — for a clean
+    // read-only view. Only affects rendering; edit_track/delete_track on the
+    // server keep checking ownership/is_admin independently.
     let hideEditDeleteButtons = (localStorage.getItem('hideEditDeleteButtons') === '1');
     let adaptiveThemeEnabled = (localStorage.getItem('theme_base') === 'adaptive');
+    // True until a song actually starts playing in this session. While idle, the
+    // adaptive theme shows the user's default adaptive theme instead of the cover
+    // colors — even if a track was restored paused from the URL (?v=).
+    let adaptiveIdle = true;
     const adaptiveColorCache = new Map();
 
     const playIcon  = '<svg viewBox="0 0 24 24" style="margin-left:2px;"><path d="M8 5v14l11-7z"/></svg>';
     const pauseIcon = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
 
-    // Source unique de vérité pour l'icône lecture/pause : se déclenche sur les
-    // évènements natifs 'play'/'pause' de <audio> plutôt que d'être posée à la
-    // main à chaque endroit qui appelle play()/pause(). Ça couvre aussi les cas
-    // où l'OS ou une touche média du clavier met en pause en dehors de nos
-    // propres boutons — l'icône reste sinon désynchronisée de l'état réel.
+    // Single source of truth for the play/pause icon: triggered by the
+    // native 'play'/'pause' events of <audio> rather than being set
+    // by hand everywhere play()/pause() is called. This also covers cases
+    // where the OS or a keyboard media key pauses outside our
+    // own buttons — otherwise the icon gets out of sync with the real state.
     function updatePlayPauseIcons() {
         const icon = audio.paused ? playIcon : pauseIcon;
         masterPlay.innerHTML = icon;
         document.getElementById('fp-masterPlay').innerHTML = icon;
     }
     audio.addEventListener('play', updatePlayPauseIcons);
+    audio.addEventListener('play', () => {
+        if (!adaptiveIdle) return;
+        adaptiveIdle = false;
+        updateAdaptiveTheme(queue[currentIndex]);
+    });
     audio.addEventListener('pause', updatePlayPauseIcons);
 
     const desktopVol = document.getElementById('desktop-vol');
@@ -2128,17 +2161,17 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         return str.toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
     }
 
-    // Les métadonnées (titre, artiste, playlist...) sont stockées déjà
-    // HTML-échappées par api.php (sanitize_text), donc un "&" ou une apostrophe
-    // saisis à l'upload finissent en "&amp;"/"&#039;" littéral en base. Sans
-    // ce correctif, escapeHTML() les ré-échapperait une seconde fois et le
-    // navigateur afficherait le texte brut "&amp;"/"&#039;" au lieu du
-    // caractère voulu. Pour l'affichage courant (titres, listes...), "&amp;"
-    // devient le mot de liaison ("and"/"et"/...) traduit via t('word_and') —
-    // piocher dans le dictionnaire i18n plutôt qu'un ternaire fr/en codé en
-    // dur permet à une langue ajoutée plus tard d'être couverte automatiquement ;
-    // pour les paroles, on restitue plutôt le symbole "&" littéral pour ne pas
-    // altérer le texte de la chanson.
+    // Metadata (title, artist, playlist...) is stored already
+    // HTML-escaped by api.php (sanitize_text), so a "&" or an apostrophe
+    // typed at upload ends up as a literal "&amp;"/"&#039;" in the database. Without
+    // this fix, escapeHTML() would escape them a second time and the
+    // browser would show the raw text "&amp;"/"&#039;" instead of the
+    // intended character. For regular display (titles, lists...), "&amp;"
+    // becomes the joining word ("and"/"et"/...) translated via t('word_and') —
+    // pulling from the i18n dictionary rather than a hard-coded fr/en ternary
+    // lets a language added later be covered automatically;
+    // for lyrics, we restore the literal "&" symbol instead so we don't
+    // alter the song's text.
     function fixEntities(str) {
         if (str == null) return str;
         return str.toString().split('&#039;').join("'").split('&amp;').join(t('word_and'));
@@ -2147,15 +2180,15 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         if (str == null) return str;
         return str.toString().split('&#039;').join("'").split('&amp;').join('&');
     }
-    // Échappe une chaîne pour l'insérer comme argument dans un attribut
-    // onclick="...('...')" : d'abord l'échappement JS (backslash puis
-    // apostrophe), puis l'échappement HTML de l'attribut lui-même — le
-    // navigateur ne décode les entités qu'une fois en parsant l'attribut,
-    // ce qui restitue exactement la séquence d'échappement JS voulue.
-    // Nécessaire dès qu'un texte peut contenir une vraie apostrophe (ex:
-    // après fixEntities()) : un simple .replace(/'/g,"\\'") appliqué après
-    // escapeHTML() ne trouve plus d'apostrophe brute à échapper puisque
-    // escapeHTML() l'a déjà convertie en "&#039;".
+    // Escapes a string to insert it as an argument in an
+    // onclick="...('...')" attribute: first JS escaping (backslash then
+    // apostrophe), then HTML escaping of the attribute itself — the
+    // browser decodes entities only once while parsing the attribute,
+    // which restores exactly the intended JS escape sequence.
+    // Needed whenever a text may contain a real apostrophe (e.g.
+    // after fixEntities()): a simple .replace(/'/g,"\\'") applied after
+    // escapeHTML() no longer finds a raw apostrophe to escape since
+    // escapeHTML() has already turned it into "&#039;".
     function jsAttrEscape(str) {
         if (str == null) return '';
         return escapeHTML(str.toString().replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
@@ -2165,9 +2198,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     function onSearchInput() {
         const term = document.getElementById('searchInput').value.trim();
         if (currentSection !== 'accueil' && term !== '') showSection('accueil');
-        // Les carrousels d'accueil (Recommandé / Populaire / Pépites cachées) n'ont
-        // pas de sens pendant une recherche : ils réapparaissent dès que la barre
-        // de recherche est vidée.
+        // The home carousels (Recommended / Popular / Hidden gems) make no
+        // sense during a search: they reappear as soon as the search bar
+        // is cleared.
         const carousels = document.getElementById('home-carousels');
         if (carousels) carousels.style.display = term === '' ? '' : 'none';
         document.getElementById('searchClearBtn').classList.toggle('visible', term !== '');
@@ -2181,11 +2214,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         input.focus();
     }
 
-    // Certains environnements (ex: raccourcis clavier système sur macOS, où
-    // Ctrl+A vaut "aller au début de ligne" et non "tout sélectionner") ne
-    // laissent pas le champ sélectionner tout son texte avec Ctrl+A/Cmd+A par
-    // défaut : on le force explicitement ici pour un comportement cohérent
-    // partout.
+    // Some environments (e.g. macOS system keyboard shortcuts, where
+    // Ctrl+A means "go to start of line" and not "select all") don't
+    // let the field select all its text with Ctrl+A/Cmd+A by
+    // default: we force it explicitly here for consistent behavior
+    // everywhere.
     function handleSearchKeydown(e) {
         if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
             e.preventDefault();
@@ -2214,10 +2247,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         renderHomeCarousels();
     }
 
-    // Affiche/masque l'entrée "Panel Admin" (nav desktop + barre mobile)
-    // selon la préférence enregistrée — l'accès direct par URL (?page=admin-page)
-    // reste possible : ceci allège juste la navigation, ce n'est pas un
-    // contrôle d'accès (is_admin côté serveur reste la seule autorité réelle).
+    // Shows/hides the "Admin Panel" entry (desktop nav + mobile bar)
+    // according to the saved preference — direct access by URL (?page=admin-page)
+    // is still possible: this only declutters navigation, it is not an
+    // access control (is_admin on the server remains the only real authority).
     function applyHideAdminPanel() {
         document.querySelectorAll('.admin-nav-btn, #mob-nav-admin-page').forEach(el => {
             el.style.display = hideAdminPanel ? 'none' : '';
@@ -2228,37 +2261,37 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         localStorage.setItem('hideAdminPanel', isChecked ? '1' : '0');
         applyHideAdminPanel();
         if (isChecked && currentSection === 'admin-page') showSection('accueil');
-        // Les boutons ✎/✕ (edit_track/delete_track) sur les pistes des autres
-        // dépendent aussi de hideAdminPanel (voir trackRowInnerHTML) : la liste
-        // principale est déjà rendue dans le DOM, il faut la reconstruire pour
-        // qu'ils apparaissent/disparaissent immédiatement sans recharger la
-        // page. Les autres pages (artiste/album/playlist/historique) relisent
-        // hideAdminPanel à chaque fois qu'on y navigue, pas besoin de les
-        // reconstruire ici puisqu'elles ne sont pas visibles en même temps
-        // que la page Paramètres.
+        // The ✎/✕ buttons (edit_track/delete_track) on other people's tracks
+        // also depend on hideAdminPanel (see trackRowInnerHTML): the main
+        // list is already rendered in the DOM, it has to be rebuilt so
+        // they appear/disappear immediately without reloading the
+        // page. The other pages (artist/album/playlist/history) re-read
+        // hideAdminPanel every time we navigate to them, no need to
+        // rebuild them here since they aren't visible at the same time
+        // as the Settings page.
         filterAndSortTracks();
     }
 
     function toggleHideEditDeleteButtons(isChecked) {
         hideEditDeleteButtons = isChecked;
         localStorage.setItem('hideEditDeleteButtons', isChecked ? '1' : '0');
-        // Même remarque que toggleHideAdminPanel : seule la liste principale
-        // (déjà dans le DOM) a besoin d'être reconstruite ici, les autres
-        // pages relisent hideEditDeleteButtons à chaque navigation.
+        // Same remark as toggleHideAdminPanel: only the main list
+        // (already in the DOM) needs to be rebuilt here, the other
+        // pages re-read hideEditDeleteButtons on every navigation.
         filterAndSortTracks();
     }
 
-    // Sépare une chaîne "artiste1, artiste2 & artiste3" (ou avec feat./ft./x/vs)
-    // en noms d'artistes individuels, chacun pointant vers sa propre page.
+    // Splits an "artist1, artist2 & artist3" string (or with feat./ft./x/vs)
+    // into individual artist names, each pointing to its own page.
     const ARTIST_SPLIT_REGEX = /\s*,\s*|\s*&amp;\s*|\s*&\s*|\s+feat\.?\s+|\s+ft\.?\s+|\s+featuring\s+|\s+vs\.?\s+|\s+x\s+|\s+and\s+|\s+et\s+/gi;
     function splitArtistNames(str) {
         if (!str) return [];
         return str.split(ARTIST_SPLIT_REGEX).map(s => s.trim()).filter(Boolean);
     }
 
-    // Rend le champ artiste d'une piste sous forme de lien(s) cliquables :
-    // si plusieurs artistes figurent dans le tag, chacun a son propre lien
-    // vers sa page (au lieu d'un seul lien vers la chaîne complète).
+    // Renders a track's artist field as clickable link(s):
+    // if several artists appear in the tag, each one gets its own link
+    // to its page (instead of a single link to the full string).
     function artistLinksHTML(rawArtist) {
         const decoded = fixEntities(rawArtist) || t('unknown_artist');
         const names = splitArtistNames(decoded);
@@ -2266,29 +2299,29 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             return `<span class="artist-link" onclick="event.stopPropagation();showArtistPage('${jsAttrEscape(decoded)}')">${escapeHTML(decoded)}</span>`;
         }
         const links = names.map(n => `<span class="artist-link" onclick="event.stopPropagation();showArtistPage('${jsAttrEscape(n)}')">${escapeHTML(n)}</span>`);
-        // "A & B" (donc "A and B" une fois fixEntities() appliqué) doit se lire
-        // "A and B", pas "A, B" : virgules entre tous les noms sauf les deux
-        // derniers, reliés par le mot de liaison localisé (word_and).
+        // "A & B" (so "A and B" once fixEntities() is applied) must read
+        // "A and B", not "A, B": commas between all names except the last
+        // two, joined by the localized joining word (word_and).
         const last = links.pop();
         return links.length ? links.join(', ') + ` ${t('word_and')} ` + last : last;
     }
 
-    // Rend le nom d'album d'une piste sous forme de lien cliquable vers sa
-    // page d'album (rien n'est rendu si la piste n'appartient à aucun album).
+    // Renders a track's album name as a clickable link to its
+    // album page (nothing is rendered if the track belongs to no album).
     function albumLinkHTML(track) {
         if (!track.album || !track.album_id) return '';
         const decoded = fixEntities(track.album);
         return ` <span style="opacity:.6;">•</span> <span class="artist-link" onclick="event.stopPropagation();showAlbumPage(${parseInt(track.album_id)})">${escapeHTML(decoded)}</span>`;
     }
 
-    // ── Menu contextuel "⋮" (file d'attente / playlists) ───────────────────
-    // Un seul élément partagé (#track-ctx-menu, dans le HTML) plutôt qu'un
-    // menu par ligne : repositionné et re-rendu selon la piste sur laquelle
-    // on a cliqué (ctxMenuTrackId).
+    // ── "⋮" context menu (queue / playlists) ───────────────────────────────
+    // A single shared element (#track-ctx-menu, in the HTML) rather than one
+    // menu per row: repositioned and re-rendered for the track that
+    // was clicked (ctxMenuTrackId).
     let ctxMenuTrackId = null;
     let ctxMenuCanEditPlaylist = false;
 
-    // Icônes Google Material Symbols (Outlined), viewBox 0 -960 960 960
+    // Google Material Symbols icons (Outlined), viewBox 0 -960 960 960
     const TRACK_MENU_ICONS = {
         queue: 'M640-160q-50 0-85-35t-35-85q0-50 35-85t85-35q11 0 21 1.5t19 6.5v-328h200v80H760v360q0 50-35 85t-85 35ZM120-320v-80h320v80H120Zm0-160v-80h480v80H120Zm0-160v-80h480v80H120Z',
         playNext: 'M120-320v-80h320v80H120Zm0-160v-80h480v80H120Zm0-160v-80h480v80H120Zm520 520v-320l240 160-240 160Z',
@@ -2322,9 +2355,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         ctxMenuTrackId = null;
     }
 
-    // Position "fixed" ancrée au bouton cliqué, recalculée après rendu (on a
-    // besoin des dimensions réelles du menu) et repliée si elle déborderait
-    // du viewport plutôt que de couper le menu.
+    // "fixed" position anchored to the clicked button, recomputed after rendering (we
+    // need the menu's real dimensions) and flipped if it would overflow
+    // the viewport rather than clipping the menu.
     function positionTrackMenu(anchorEl) {
         const menu = document.getElementById('track-ctx-menu');
         const btnRect = anchorEl.getBoundingClientRect();
@@ -2340,9 +2373,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             menu.style.top = top + 'px';
         });
     }
-    // Recale seulement la position verticale après un changement de contenu
-    // (ex: passage au sous-menu "playlists", plus long que le menu principal),
-    // sans redemander la position du bouton d'origine (pas conservée).
+    // Only re-adjusts the vertical position after a content change
+    // (e.g. switching to the "playlists" submenu, longer than the main menu),
+    // without asking again for the original button's position (not kept).
     function reclampTrackMenuVertical() {
         const menu = document.getElementById('track-ctx-menu');
         requestAnimationFrame(() => {
@@ -2356,18 +2389,18 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         if (menu.classList.contains('open') && !menu.contains(e.target) && !e.target.closest('.track-menu-btn')) closeTrackMenu();
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTrackMenu(); });
-    // Un menu positionné en `fixed` sur son bouton se désynchronise dès que
-    // la liste défile en dessous : plus simple et plus sûr de le refermer.
+    // A menu positioned `fixed` on its button gets out of sync as soon as
+    // the list scrolls underneath: simpler and safer to close it.
     window.addEventListener('scroll', () => closeTrackMenu(), true);
 
     function renderTrackMenuMain() {
         const menu = document.getElementById('track-ctx-menu');
-        // event.stopPropagation() est indispensable ici : le clic remplace le
-        // contenu du menu (innerHTML) AVANT de remonter jusqu'au listener
-        // document qui ferme le menu au clic extérieur — sans l'arrêter, ce
-        // listener reçoit un e.target déjà détaché du DOM (donc pas "contenu"
-        // dans le menu à ses yeux) et referme le menu à l'instant où il vient
-        // de changer de contenu.
+        // event.stopPropagation() is essential here: the click replaces the
+        // menu's content (innerHTML) BEFORE bubbling up to the document
+        // listener that closes the menu on outside clicks — without stopping it, this
+        // listener receives an e.target already detached from the DOM (so not "contained"
+        // in the menu as far as it knows) and closes the menu right when it has just
+        // changed content.
         const removeItem = ctxMenuCanEditPlaylist
             ? `<div class="track-menu-divider"></div><div class="track-menu-item has-icon danger" onclick="event.stopPropagation();menuRemoveFromPlaylist()">${trackMenuIcon(TRACK_MENU_ICONS.remove)}<span>${t('remove_from_playlist')}</span></div>`
             : '';
@@ -2378,11 +2411,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             ${removeItem}`;
     }
 
-    // Sous-panneau "Ajouter à une playlist" : liste les playlists modifiables
-    // par l'utilisateur (siennes, ou toutes si admin — même règle que
-    // playlist_mod côté serveur), avec une coche sur celles qui contiennent
-    // déjà cette piste (non cliquables : playlist_mod 'add' est idempotent
-    // côté serveur mais autant éviter l'appel réseau inutile).
+    // "Add to a playlist" sub-panel: lists the playlists the user
+    // can edit (their own, or all of them if admin — same rule as
+    // playlist_mod on the server), with a check mark on those that already
+    // contain this track (not clickable: playlist_mod 'add' is idempotent
+    // on the server but we might as well avoid the useless network call).
     function renderTrackMenuPlaylists() {
         const menu = document.getElementById('track-ctx-menu');
         const eligible = ALL_PLAYLISTS.filter(p => p.creator_id == CURRENT_USER_ID || IS_ADMIN);
@@ -2420,9 +2453,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         closeTrackMenu();
     }
 
-    // Réutilise la modale de création de playlist existante (sélection
-    // multiple de pistes) plutôt que d'en construire une dédiée : on l'ouvre
-    // et on pré-coche simplement la piste d'où vient le menu.
+    // Reuses the existing playlist creation modal (multiple track
+    // selection) rather than building a dedicated one: we open it
+    // and simply pre-check the track the menu came from.
     function menuCreatePlaylistWithTrack() {
         const trackId = ctxMenuTrackId;
         closeTrackMenu();
@@ -2441,20 +2474,20 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         removeFromPlaylist(trackId);
     }
 
-    // ── Mutations directes de la file en cours, indépendantes du contexte
-    // qui l'a construite (recherche/bibliothèque/album...). `queue` (ordre de
-    // lecture réel) et `originalQueue` (référence canonique utilisée par
-    // toggleShuffle/refillQueueIfNeeded) sont maintenues synchronisées : sans
-    // ça, un morceau ajouté manuellement disparaîtrait au prochain
-    // (dé)mélange, `toggleShuffle` ne conservant que les ids présents dans
+    // ── Direct mutations of the current queue, independent of the context
+    // that built it (search/library/album...). `queue` (actual playback
+    // order) and `originalQueue` (canonical reference used by
+    // toggleShuffle/refillQueueIfNeeded) are kept in sync: without
+    // that, a manually added track would disappear on the next
+    // (un)shuffle, since `toggleShuffle` only keeps the ids present in
     // `originalQueue`.
-    // Retire les occurrences déjà présentes plus loin dans la file (upcoming
-    // uniquement, jamais l'historique déjà jouée ni la piste en cours) avant
-    // réinsertion : sans ça, "Lire ensuite"/"Ajouter à la file" sur un
-    // morceau déjà programmé plus loin le dupliquerait, et laisserait
-    // originalQueue avec deux occurrences alors que `queue` n'en a qu'une —
-    // désynchronisation qui refait surface (doublon ou perte) au prochain
-    // (dé)mélange, toggleShuffle ne faisant que filtrer originalQueue par id.
+    // Removes occurrences already present further in the queue (upcoming
+    // only, never the already-played history nor the current track) before
+    // reinserting: without that, "Play next"/"Add to queue" on a
+    // track already scheduled further down would duplicate it, and leave
+    // originalQueue with two occurrences while `queue` has only one —
+    // a desync that resurfaces (duplicate or loss) on the next
+    // (un)shuffle, since toggleShuffle only filters originalQueue by id.
     function removeFromUpcomingQueue(trackId) {
         const curId = queue[currentIndex] ? queue[currentIndex].id : null;
         if (trackId === curId) return;
@@ -2492,10 +2525,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         const safeTitle  = escapeHTML(fixEntities(t.title));
         const artistHTML = artistLinksHTML(t.artist);
         const albumHTML  = albumLinkHTML(t);
-        // Le genre brut (non décodé) doit correspondre exactement à l'attribut
-        // value des <option> du select "Genre" de la modale d'édition
-        // (openEditTrackModal). displayGenre est la version décodée affichée
-        // dans la liste.
+        // The raw (undecoded) genre must exactly match the value attribute
+        // of the <option>s in the edit modal's "Genre" select
+        // (openEditTrackModal). displayGenre is the decoded version shown
+        // in the list.
         const rawGenre     = t.genre || 'Autre';
         const displayGenre = escapeHTML(fixEntities(rawGenre));
         const safeCover  = escapeHTML(t.cover_url);
@@ -2504,22 +2537,22 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         const jsGenre    = jsAttrEscape(rawGenre);
         const jsAlbum    = jsAttrEscape(fixEntities(t.album || ''));
         let editButtons  = '';
-        // hideEditDeleteButtons masque ✎/✕ pour tout le monde, même sur ses
-        // propres pistes (vue épurée en lecture seule) ; hideAdminPanel ne
-        // masque que le passe-droit admin sur les pistes des AUTRES — un admin
-        // qui l'a coché veut arrêter de voir ces contrôles sur ce qu'il n'a
-        // pas uploadé lui-même, sans perdre l'édition de son propre upload.
-        // Dans les deux cas, rien ne change côté serveur : delete_track/
-        // edit_track y revérifient toujours l'appartenance/is_admin indépendamment.
+        // hideEditDeleteButtons hides ✎/✕ for everyone, even on their
+        // own tracks (clean read-only view); hideAdminPanel only
+        // hides the admin override on OTHER people's tracks — an admin
+        // who checked it wants to stop seeing these controls on what they didn't
+        // upload themselves, without losing editing on their own uploads.
+        // In both cases, nothing changes on the server: delete_track/
+        // edit_track always re-check ownership/is_admin independently there.
         if (!hideEditDeleteButtons && (t.uploader_id == CURRENT_USER_ID || (IS_ADMIN && !hideAdminPanel))) {
             editButtons = `
                 <button class="btn btn-outline" style="font-size:.7em;padding:6px 10px;border-radius:8px;" onclick="openEditTrackModal(${t.id},'${jsTitle}','${jsArtist}','${jsGenre}','${jsAlbum}')">✎</button>
                 <button class="btn btn-danger" style="border-radius:8px;" onclick="deleteTrack(${t.id})">✕</button>`;
         }
-        // context indique de quelle liste vient ce morceau (page artiste/album)
-        // pour que le clic construise la file d'attente à partir de CETTE liste
-        // plutôt que de CURRENT_VIEW_DATA, qui peut être une autre liste (ex: des
-        // résultats de recherche) n'ayant plus rien à voir avec la page affichée.
+        // context tells which list this track comes from (artist/album page)
+        // so that the click builds the queue from THAT list
+        // rather than CURRENT_VIEW_DATA, which may be another list (e.g.
+        // search results) that has nothing to do with the displayed page anymore.
         const clickHandler = context === 'artist'  ? `playTrackInArtist(${t.id})`
                             : context === 'album'   ? `playTrackInAlbum(${t.id})`
                             : context === 'history' ? `playTrackInHistory(${t.id})`
@@ -2554,8 +2587,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         listContainer.appendChild(fragment); renderedCount += chunk.length;
     }
 
-    // ── Page artiste : liste toutes les pistes où ce nom d'artiste figure
-    // (y compris les pistes créditées à plusieurs artistes) ────────────
+    // ── Artist page: lists all tracks where this artist name appears
+    // (including tracks credited to several artists) ────────────
     let artistBioToken = 0;
     function showArtistPage(name, doUrl = true) {
         closeFullPlayer();
@@ -2566,9 +2599,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         document.getElementById('artist-page-title').innerText = name;
         document.getElementById('artist-page-count').innerText = tracks.length + ' ' + t('tracks_count_label');
 
-        // Pochette de la piste la plus récente (id le plus élevé, même convention
-        // que le tri "Ajouts récents") utilisée comme photo de profil et comme
-        // fond flouté de l'en-tête artiste.
+        // Cover of the most recent track (highest id, same convention
+        // as the "Recently added" sort) used as the profile picture and as the
+        // blurred background of the artist header.
         const mostRecent = tracks.length ? tracks.reduce((a, b) => (b.id > a.id ? b : a)) : null;
         const heroCover  = mostRecent ? mostRecent.cover_url : 'covers/default.png';
         const pfpImg    = document.getElementById('artist-pfp');
@@ -2588,22 +2621,22 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         showSection('artist-page', doUrl);
     }
 
-    // ── Page album : liste les pistes rattachées à cet album_id ────────
+    // ── Album page: lists the tracks attached to this album_id ────────
     function showAlbumPage(albumId, doUrl = true) {
         closeFullPlayer();
         albumId = parseInt(albumId);
         currentAlbumId = albumId;
-        // Ordre des pistes d'un album = ordre d'upload (la plus ancienne = piste 1),
-        // pas l'ordre de ALL_MUSIC_DATA (trié par popularité).
+        // Album track order = upload order (oldest = track 1),
+        // not the order of ALL_MUSIC_DATA (sorted by popularity).
         const tracks = ALL_MUSIC_DATA.filter(tr => parseInt(tr.album_id) === albumId).sort((a, b) => a.id - b.id);
         const albumName = tracks.length ? fixEntities(tracks[0].album) : '';
 
         document.getElementById('album-page-title').innerText = albumName;
         document.getElementById('album-page-count').innerText = tracks.length + ' ' + t('tracks_count_label');
 
-        // Artistes en présence sur l'album : union dédupliquée (insensible à la
-        // casse) des artistes de chaque piste, y compris les featurings séparés
-        // par splitArtistNames (ex: "A feat. B" -> A, B tous deux cliquables).
+        // Artists featured on the album: de-duplicated (case-insensitive)
+        // union of each track's artists, including featurings split
+        // by splitArtistNames (e.g. "A feat. B" -> A, B both clickable).
         const artistMap = new Map();
         tracks.forEach(tr => {
             splitArtistNames(fixEntities(tr.artist)).forEach(n => {
@@ -2621,9 +2654,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             artistsEl.innerHTML = '';
         }
 
-        // Même logique de fallback que le backend (action=album_cover) : une
-        // cover d'album importée manuellement prime, sinon la pochette du
-        // morceau le plus récent de l'album est utilisée.
+        // Same fallback logic as the backend (action=album_cover): a manually
+        // imported album cover takes priority, otherwise the cover of the
+        // album's most recent track is used.
         const heroCover = 'api.php?action=album_cover&q=' + albumId + '&t=' + Date.now();
         const pfpImg    = document.getElementById('album-pfp');
         const heroBgImg = document.getElementById('album-hero-bg-img');
@@ -2641,8 +2674,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         showSection('album-page', doUrl);
     }
 
-    // ── Page playlist : détail d'une playlist (titre, créateur, visibilité,
-    // pistes dans l'ordre de song_ids) — ouverte en cliquant sur sa carte.
+    // ── Playlist page: details of a playlist (title, creator, visibility,
+    // tracks in song_ids order) — opened by clicking its card.
     let playlistEditMode = false;
     let currentPlaylistCanEdit = false;
 
@@ -2658,9 +2691,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         showSection('playlist-page', doUrl);
     }
 
-    // ── Page historique : morceaux réellement écoutés par l'utilisateur
-    // (table listen_history côté serveur), un par piste, du plus récent au
-    // plus ancien — pas un tirage random ni une liste dérivée d'un tri.
+    // ── History page: tracks actually listened to by the user
+    // (listen_history table on the server), one per track, from most recent to
+    // oldest — not a random draw nor a list derived from a sort.
     async function showHistoryPage(doUrl = true) {
         closeFullPlayer();
         showSection('history', doUrl);
@@ -2668,7 +2701,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         listContainer.innerHTML = '';
         const res = await apiCall('history', { limit: 100 });
 
-        // La page a pu être quittée pendant l'attente de la réponse.
+        // The page may have been left while waiting for the response.
         if (currentSection !== 'history') return;
 
         if (!Array.isArray(res)) {
@@ -2694,11 +2727,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         listContainer.appendChild(fragment);
     }
 
-    // ── Reconstruit tout le contenu de la page playlist (hero, mosaïque,
-    // liste) depuis currentViewedPlaylist / ALL_MUSIC_DATA, sans naviguer
-    // ni toucher à playlistEditMode — utilisé après chaque mutation locale
-    // (reorder, remove, renommage) pour un rendu instantané façon YouTube
-    // Music, sans rechargement de page.
+    // ── Rebuilds the whole playlist page content (hero, mosaic,
+    // list) from currentViewedPlaylist / ALL_MUSIC_DATA, without navigating
+    // or touching playlistEditMode — used after every local mutation
+    // (reorder, remove, rename) for instant YouTube Music-style rendering,
+    // without a page reload.
     function renderPlaylistPageContent() {
         const playlist = currentViewedPlaylist;
         if (!playlist) return;
@@ -2716,8 +2749,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         document.getElementById('playlist-page-actions').style.display = currentPlaylistCanEdit ? 'flex' : 'none';
         updatePlaylistEditModeUI();
 
-        // Mosaïque de couvertures (jusqu'à 4, répétées si moins), même
-        // convention que les cartes de la grille playlists.
+        // Cover mosaic (up to 4, repeated if fewer), same
+        // convention as the playlist grid cards.
         const covers = tracks.slice(0, 4).map(tr => tr.cover_url);
         if (!covers.length) covers.push('covers/default.png');
         const slots = covers.length === 1 ? 1 : 4;
@@ -2735,9 +2768,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         renderPlaylistTrackList(tracks, currentPlaylistCanEdit && playlistEditMode);
     }
 
-    // ── Bascule le mode édition de la page playlist : c'est lui qui fait
-    // apparaître les poignées de glisser-déposer / flèches / ✕ sur la liste,
-    // et transforme le titre en champ éditable en place (pas de popup).
+    // ── Toggles the playlist page's edit mode: this is what makes
+    // the drag-and-drop handles / arrows / ✕ appear on the list,
+    // and turns the title into an in-place editable field (no popup).
     function togglePlaylistEditMode() {
         if (!currentPlaylistCanEdit) return;
         playlistEditMode = !playlistEditMode;
@@ -2774,8 +2807,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         }
     }
 
-    // ── Visibilité (publique/privée) : bascule immédiate au clic sur la
-    // case, disponible uniquement en mode édition — pas de popup non plus.
+    // ── Visibility (public/private): toggles immediately when clicking the
+    // checkbox, only available in edit mode — no popup either.
     async function togglePlaylistVisibility(isPublic) {
         if (!currentViewedPlaylist) return;
         const res = await apiCall('playlist_mod', { playlist_id: currentViewedPlaylist.id, mode: 'visibility', is_public: isPublic ? '1' : '0' });
@@ -2788,8 +2821,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         }
     }
 
-    // ── Renommage en place : sauvegarde au blur/Enter du champ titre,
-    // seulement si le nom a réellement changé — pas de popup.
+    // ── In-place rename: saves on blur/Enter of the title field,
+    // only if the name actually changed — no popup.
     async function savePlaylistTitleInline() {
         if (!currentViewedPlaylist || !playlistEditMode) return;
         const input = document.getElementById('playlist-page-title-input');
@@ -2808,11 +2841,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         }
     }
 
-    // ── Liste des pistes d'une playlist, avec réordonnancement à la
-    // YouTube Music quand l'utilisateur en a les droits (propriétaire/admin) :
-    // glisser-déposer (souris) + flèches ▲▼ (accessible/tactile), le tout
-    // persisté instantanément via playlist_mod/mode=reorder, sans rechargement
-    // de page — seule la liste (et la mosaïque de couvertures) se met à jour.
+    // ── A playlist's track list, with YouTube Music-style
+    // reordering when the user has the rights (owner/admin):
+    // drag-and-drop (mouse) + ▲▼ arrows (accessible/touch), all
+    // persisted instantly via playlist_mod/mode=reorder, without a page
+    // reload — only the list (and the cover mosaic) updates.
     function renderPlaylistTrackList(tracks, canEdit) {
         const listContainer = document.getElementById('playlist-track-list');
         const hint = document.getElementById('playlist-page-reorder-hint');
@@ -2859,8 +2892,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             ${trackMenuButtonHTML(tr.id, currentPlaylistCanEdit)}`;
     }
 
-    // ── Glisser-déposer natif (souris) : réordonne le DOM en direct pendant
-    // le drag, ne persiste (reorder) qu'au relâchement.
+    // ── Native drag-and-drop (mouse): reorders the DOM live during
+    // the drag, only persists (reorder) on release.
     function attachPlaylistDragHandlers(container) {
         let dragEl = null;
         container.querySelectorAll('.track-item.pl-editable').forEach(item => {
@@ -2901,9 +2934,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         });
     }
 
-    // ── Réordonnancement via les flèches ▲▼ : recalcule song_ids et
-    // ré-affiche la page depuis les données déjà en mémoire (pas d'appel
-    // réseau pour l'affichage, seule la persistance passe par l'API).
+    // ── Reordering via the ▲▼ arrows: recomputes song_ids and
+    // re-renders the page from the data already in memory (no network
+    // call for display, only persistence goes through the API).
     function movePlaylistTrack(trackId, dir) {
         if (!currentViewedPlaylist) return;
         const ids = String(currentViewedPlaylist.song_ids).split(',').filter(Boolean).map(Number);
@@ -2936,10 +2969,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         } else alert(res.message || t('err_delete'));
     }
 
-    // ── Biographie Wikipedia : REST API publique (CORS ouvert), interrogée
-    // directement depuis le navigateur — n'implique aucun appel à api.php.
-    // Un jeton évite qu'une réponse tardive d'une ancienne recherche n'écrase
-    // la bio de l'artiste affiché entre-temps.
+    // ── Wikipedia biography: public REST API (open CORS), queried
+    // directly from the browser — involves no call to api.php.
+    // A token prevents a late response from an old lookup from overwriting
+    // the bio of the artist displayed in the meantime.
     async function fetchArtistBio(name) {
         const bioEl = document.getElementById('artist-page-bio');
         const myToken = ++artistBioToken;
@@ -2968,10 +3001,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                 const data = await res.json();
                 if (data.type !== 'disambiguation' && data.extract) return data;
             }
-        } catch (e) { /* on retente via la recherche ci-dessous */ }
-        // Nom ambigu (page d'homonymie) ou introuvable tel quel : on cherche
-        // parmi les résultats la première page "standard" correspondante
-        // (ex. "Drake" → page d'homonymie → "Drake (musician)").
+        } catch (e) { /* retry via the search below */ }
+        // Ambiguous name (disambiguation page) or not found as is: we look
+        // among the results for the first matching "standard" page
+        // (e.g. "Drake" → disambiguation page → "Drake (musician)").
         try {
             const searchRes = await fetch(`https://${lang}.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(name)}&limit=5`);
             if (!searchRes.ok) return null;
@@ -2983,7 +3016,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                 const sumData = await sumRes.json();
                 if (sumData.type !== 'disambiguation' && sumData.extract) return sumData;
             }
-        } catch (e) { /* pas de bio disponible */ }
+        } catch (e) { /* no bio available */ }
         return null;
     }
 
@@ -3007,9 +3040,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         CURRENT_VIEW_DATA = filtered; renderedCount = 0; renderTracksChunk();
     }
 
-    // Recherche globale : regroupe les résultats par catégorie, dans l'ordre
-    // Artistes → Albums → Chansons (cette dernière restant la liste filtrée
-    // rendue par renderTracksChunk juste en dessous).
+    // Global search: groups results by category, in the order
+    // Artists → Albums → Songs (the latter being the filtered list
+    // rendered by renderTracksChunk just below).
     function renderSearchCategoryResults(term) {
         const artistsSection = document.getElementById('search-artists-section');
         const albumsSection  = document.getElementById('search-albums-section');
@@ -3080,8 +3113,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         tracksTitle.innerText = t('songs_title');
     }
 
-    // tracks === null : squelette animé (nombre de cartes fixe, en attendant
-    // encore les données, ex: le temps de l'appel action=recommend).
+    // tracks === null: animated skeleton (fixed number of cards, while still
+    // waiting for the data, e.g. during the action=recommend call).
     function trackCardsHtml(tracks) {
         if (tracks === null) {
             return Array.from({ length: 6 }, () => `<div class="carousel-card">
@@ -3090,11 +3123,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                 <div class="cc-artist-skeleton"></div>
             </div>`).join('');
         }
-        // playTrackFromIds (pas playTrackById) : un clic sur un carrousel
-        // (populaire, pépites cachées, recommandé...) doit démarrer une file
-        // contextuelle dynamique seedée sur CE morceau précis (voir
-        // buildDynamicQueue), pas rejouer CURRENT_VIEW_DATA (liste principale
-        // triée/recherchée) qui n'a souvent rien à voir avec ce carrousel.
+        // playTrackFromIds (not playTrackById): a click on a carousel
+        // (popular, hidden gems, recommended...) must start a dynamic
+        // contextual queue seeded on THAT specific track (see
+        // buildDynamicQueue), not replay CURRENT_VIEW_DATA (main list,
+        // sorted/searched) which often has nothing to do with this carousel.
         const idsAttr = tracks.map(tr => tr.id).join(',');
         return tracks.map(t => {
             const safeTitle  = escapeHTML(fixEntities(t.title));
@@ -3108,8 +3141,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         }).join('');
     }
 
-    // tracks === null affiche un squelette animé à la place (section jamais
-    // masquée dans ce cas, contrairement à une liste vide une fois chargée).
+    // tracks === null shows an animated skeleton instead (section never
+    // hidden in this case, unlike an empty list once loaded).
     function renderCarouselSection(id, title, tracks) {
         if (tracks !== null && !tracks.length) return '';
         return `<section class="carousel-section">
@@ -3144,9 +3177,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
         const allPill = `<div class="genre-pill${selectedHomeGenre === null ? ' active' : ''}" onclick="filterHomeByGenre(null)">${t('all')}</div>`;
         const pills = genres.map(g => {
-            // Le filtre compare selectedHomeGenre à la valeur brute de t.genre :
-            // l'argument onclick doit donc rester non décodé, seul le libellé affiché
-            // passe par fixEntities().
+            // The filter compares selectedHomeGenre to the raw value of t.genre:
+            // the onclick argument must therefore stay undecoded, only the displayed label
+            // goes through fixEntities().
             const matchArg = jsAttrEscape(g);
             const displayGenre = escapeHTML(fixEntities(g));
             const isActive = selectedHomeGenre === g;
@@ -3161,9 +3194,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         renderHomeCarousels();
     }
 
-    // Cache les recommandations calculées côté serveur (affinité de genre/
-    // artiste/album déduite des playlists de l'utilisateur + popularité) pour
-    // éviter un appel API à chaque changement de filtre de genre sur l'accueil.
+    // Caches the recommendations computed on the server (genre/
+    // artist/album affinity derived from the user's playlists + popularity) to
+    // avoid an API call on every genre filter change on the home page.
     let recommendedCache = null;
 
     async function fetchRecommended() {
@@ -3184,10 +3217,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         if (selectedHomeGenre !== null) visible = visible.filter(t => (t.genre || 'Autre') === selectedHomeGenre);
         if (!visible.length) { container.innerHTML = ''; return; }
 
-        // Populaire : déjà trié par play_count DESC côté API.
+        // Popular: already sorted by play_count DESC by the API.
         const popular = visible.slice(0, 15);
 
-        // Pépites cachées : sélection aléatoire parmi les 30 pistes les moins écoutées.
+        // Hidden gems: random selection among the 30 least-played tracks.
         const leastPopularPool = [...visible]
             .sort((a, b) => (a.play_count||0) - (b.play_count||0))
             .slice(0, 30);
@@ -3201,12 +3234,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             return recommended;
         }
 
-        // Populaire/Pépites cachées sont dérivés localement (aucune attente
-        // réseau nécessaire) et s'affichent tout de suite ; Recommandé affiche
-        // un squelette animé le temps de l'appel action=recommend, au lieu de
-        // bloquer l'affichage des trois carrousels derrière ce seul appel.
-        // Si le cache est déjà chaud (ex: on revient d'un filtre de genre),
-        // pas besoin de squelette, la vraie liste est déjà disponible.
+        // Popular/Hidden gems are derived locally (no network wait
+        // needed) and show up right away; Recommended shows
+        // an animated skeleton during the action=recommend call, instead of
+        // blocking the display of all three carousels behind that single call.
+        // If the cache is already warm (e.g. coming back from a genre filter),
+        // no need for a skeleton, the real list is already available.
         const cacheReady = recommendedCache !== null;
         container.innerHTML =
             renderCarouselSection('carousel-recommended', t('recommended_for_you'), cacheReady ? buildRecommended(recommendedCache) : null) +
@@ -3217,19 +3250,19 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
         const allRecommended = await fetchRecommended();
 
-        // La page a pu être quittée pendant l'attente.
+        // The page may have been left while waiting.
         const track = document.getElementById('carousel-recommended');
         if (!track) return;
         track.innerHTML = trackCardsHtml(buildRecommended(allRecommended));
     }
 
-    // ── Grille "Albums" : un album par album_id distinct, dérivé de
-    // ALL_MUSIC_DATA (comme les pages artiste/album) — pas d'appel API séparé.
-    // Tri partagé grilles Albums/Artistes : 'name_asc' (défaut, comportement
-    // historique inchangé), 'name_desc', ou 'recent' (approximé par l'id de
-    // piste le plus élevé de l'album/artiste — aucune date d'ajout n'est
-    // exposée côté client, mais l'id est attribué en ordre d'upload donc sert
-    // de proxy fiable de récence).
+    // ── "Albums" grid: one album per distinct album_id, derived from
+    // ALL_MUSIC_DATA (like the artist/album pages) — no separate API call.
+    // Shared sort for the Albums/Artists grids: 'name_asc' (default, historical
+    // behavior unchanged), 'name_desc', or 'recent' (approximated by the highest
+    // track id of the album/artist — no date added is
+    // exposed on the client, but ids are assigned in upload order so they serve
+    // as a reliable proxy for recency).
     function sortGridEntries(items, sortMode) {
         if (sortMode === 'name_desc') return items.sort((a, b) => b.sortName.localeCompare(a.sortName));
         if (sortMode === 'recent')    return items.sort((a, b) => b.latestId - a.latestId);
@@ -3285,10 +3318,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         }).join('');
     }
 
-    // ── Grille "Artistes" : un artiste par nom distinct (featurings séparés
-    // via splitArtistNames), dérivée de ALL_MUSIC_DATA comme la grille albums.
-    // La pochette affichée est celle du morceau le plus récent de l'artiste,
-    // même convention que showArtistPage().
+    // ── "Artists" grid: one artist per distinct name (featurings split
+    // via splitArtistNames), derived from ALL_MUSIC_DATA like the albums grid.
+    // The displayed cover is the one from the artist's most recent track,
+    // same convention as showArtistPage().
     function renderArtistsGrid() {
         const container = document.getElementById('artists-grid');
         if (!container) return;
@@ -3362,7 +3395,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
         renderThemeSwatches();
         const savedTheme = localStorage.getItem('theme_base');
-        if (savedTheme && savedTheme !== 'adaptive') applyTheme(savedTheme);
+        if (savedTheme === 'adaptive') { if (adaptiveIdle) applyAdaptiveFallback(); }
+        else if (savedTheme) applyTheme(savedTheme);
+        else applyThemeColors(null);
         renderEqSliders();
 
         document.getElementById('upload-form').addEventListener('submit', handleUploadSubmit);
@@ -3389,9 +3424,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     }
     function closeFullPlayer() {
         const fp = document.getElementById('full-player');
-        // Passe sous #player-bar (voir règle .closing) le temps que l'animation
-        // de descente se termine, puis revient au z-index normal pour la
-        // prochaine ouverture.
+        // Goes under #player-bar (see the .closing rule) while the
+        // slide-down animation finishes, then returns to the normal z-index for the
+        // next opening.
         fp.classList.add('closing');
         fp.classList.remove('active');
         document.body.style.overflow = 'auto';
@@ -3402,11 +3437,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         });
     }
     function handlePlayerBarClick(e) {
-        // On utilise composedPath() plutôt que e.target.closest() : certains
-        // boutons (masterPlay) remplacent leur propre innerHTML (icône play/
-        // pause) au clic, ce qui détache le noeud cible du DOM avant que
-        // l'évènement ne remonte jusqu'ici — closest() échouerait alors à
-        // retrouver le <button> ancêtre et déclencherait le toggle à tort.
+        // We use composedPath() rather than e.target.closest(): some
+        // buttons (masterPlay) replace their own innerHTML (play/
+        // pause icon) on click, which detaches the target node from the DOM before
+        // the event bubbles up here — closest() would then fail to
+        // find the ancestor <button> and would wrongly trigger the toggle.
         const path = e.composedPath ? e.composedPath() : [e.target];
         const hitsControl = path.some(el => el.nodeType === 1 && (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || (el.classList && el.classList.contains('pb-seek'))));
         if (hitsControl) return;
@@ -3436,13 +3471,13 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         });
     }
 
-    // ── Bibliothèque : clic sur un morceau sans recherche active → la file
-    // est exactement CURRENT_VIEW_DATA (tri/filtre en cours), figée telle
-    // quelle et tournée pour démarrer sur le morceau cliqué ; rien n'est
-    // ajouté après. Recherche active → la pertinence de "coller au terme
-    // tapé" prime moins que le fait d'écouter LE morceau choisi : on démarre
-    // une file contextuelle dynamique dessus (voir buildDynamicQueue),
-    // exactement comme un clic sur un morceau depuis un carrousel/artiste.
+    // ── Library: clicking a track with no active search → the queue
+    // is exactly CURRENT_VIEW_DATA (current sort/filter), frozen as
+    // is and rotated to start on the clicked track; nothing is
+    // appended after it. Active search → "sticking to the typed term"
+    // matters less than listening to THE chosen track: we start
+    // a dynamic contextual queue on it (see buildDynamicQueue),
+    // exactly like clicking a track from a carousel/artist page.
     function playTrackById(id, autoPlay = true) {
         const term = document.getElementById('searchInput').value.trim();
         if (term) {
@@ -3463,11 +3498,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         loadTrack(autoPlay);
     }
 
-    // ── File contextuelle "DJ" : démarre sur seedTrack (lecture immédiate),
-    // puis complète en tâche de fond avec un lot mélangeant même artiste/
-    // genre lié/découverte/aléatoire (buildContextualBatch). Utilisée pour
-    // toute lecture dont le point de départ est UN morceau précis plutôt
-    // qu'une liste explicite à respecter (recherche, carrousels, artiste).
+    // ── "DJ" contextual queue: starts on seedTrack (immediate playback),
+    // then tops up in the background with a batch mixing same artist/
+    // related genre/discovery/random (buildContextualBatch). Used for
+    // any playback whose starting point is ONE specific track rather
+    // than an explicit list to follow (search, carousels, artist).
     async function buildDynamicQueue(seedTrack, autoPlay = true) {
         currentPlaylistId = null;
         queueMode = 'dynamic';
@@ -3477,10 +3512,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         originalQueue = [seedTrack];
         queue = [seedTrack];
         currentIndex = 0;
-        // loadTrack() déclenche refillQueueIfNeeded() (la file ne contient que
-        // le seed, donc sous le seuil) : le verrou ci-dessous l'empêche de
-        // tourner en même temps que le lot initial ci-dessous et de piocher
-        // les mêmes morceaux (doublons).
+        // loadTrack() triggers refillQueueIfNeeded() (the queue only contains
+        // the seed, so it's under the threshold): the lock below prevents it from
+        // running at the same time as the initial batch below and picking
+        // the same tracks (duplicates).
         queueBatchInFlight = true;
         loadTrack(autoPlay);
 
@@ -3493,19 +3528,19 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         updateQueueUI();
     }
 
-    // Variante pour les carrousels (populaire, pépites cachées, recommandé...) :
-    // leurs cartes ne portent que des ids dans leur attribut onclick (pas les
-    // objets pistes complets), donc on les résout depuis ALL_MUSIC_DATA.
+    // Variant for the carousels (popular, hidden gems, recommended...):
+    // their cards only carry ids in their onclick attribute (not the
+    // full track objects), so we resolve them from ALL_MUSIC_DATA.
     function playTrackFromIds(id, idsStr) {
         const seed = ALL_MUSIC_DATA.find(t => t.id === Number(id));
         if (seed) buildDynamicQueue(seed, true);
     }
 
-    // ── Page artiste : d'abord les autres morceaux de CET artiste (dans
-    // l'ordre où ils sont affichés sur sa page, comme playTrackInAlbum),
-    // puis une continuation contextuelle générée une fois son catalogue
-    // épuisé — plutôt qu'un mélange "radio" qui aurait pu faire apparaître
-    // un autre artiste dès le 2e morceau.
+    // ── Artist page: first the other tracks by THIS artist (in
+    // the order they're shown on their page, like playTrackInAlbum),
+    // then a generated contextual continuation once their catalog is
+    // exhausted — rather than a "radio" mix that could have brought in
+    // another artist from the 2nd track.
     function playTrackInArtist(id) {
         if (!currentArtistName) { playTrackById(id); return; }
         const norm = currentArtistName.trim().toLowerCase();
@@ -3519,19 +3554,19 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         buildFixedQueueWithContinuation(tracks, { startId: id, autoPlay: true });
     }
 
-    // ── Page historique : la liste n'est pas dérivable de ALL_MUSIC_DATA
-    // (ordre chronologique propre à l'utilisateur), donc on rejoue depuis la
-    // liste mise en cache par showHistoryPage(). Pas de continuation générée :
-    // c'est une consultation d'historique, pas un point de départ de "radio".
+    // ── History page: the list can't be derived from ALL_MUSIC_DATA
+    // (chronological order specific to the user), so we replay from the
+    // list cached by showHistoryPage(). No generated continuation:
+    // it's browsing history, not a "radio" starting point.
     function playTrackInHistory(id) {
         if (!currentHistoryTracks.length) { playTrackById(id); return; }
         buildFixedQueueNoContinuation(currentHistoryTracks, { startId: id, autoPlay: true });
     }
 
-    // ── Une playlist ne se complète jamais avec une continuation générée :
-    // ses morceaux sont la file entière, du début à la fin (ou en boucle sur
-    // elle-même si le mode repeat est actif) — jamais de recommandations
-    // ajoutées après son dernier morceau.
+    // ── A playlist is never topped up with a generated continuation:
+    // its tracks are the whole queue, from start to end (or looping on
+    // itself if repeat mode is on) — never any recommendations
+    // appended after its last track.
     function playTrackInPlaylist(id) {
         if (!currentViewedPlaylist) { playTrackById(id); return; }
         const idList = String(currentViewedPlaylist.song_ids).split(',').map(Number).filter(Boolean);
@@ -3553,11 +3588,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         buildFixedQueueNoContinuation(data, { autoPlay: true, playlistId: pId });
     }
 
-    // Construit une file "fixe" (ordre d'une liste explicite : playlist ou
-    // historique) sans jamais y ajouter de continuation générée. `startId`
-    // absent = on démarre à l'index 0 de la file (éventuellement mélangée),
-    // comme le bouton "Lecture" d'une playlist ; présent = on démarre/rejoint
-    // exactement ce morceau, comme un clic sur une piste précise.
+    // Builds a "fixed" queue (order of an explicit list: playlist or
+    // history) without ever appending a generated continuation. `startId`
+    // missing = we start at index 0 of the queue (possibly shuffled),
+    // like a playlist's "Play" button; present = we start/jump to
+    // exactly that track, like clicking a specific track.
     function buildFixedQueueNoContinuation(tracks, opts = {}) {
         const { startId = null, autoPlay = true, playlistId = null } = opts;
         if (!tracks.length) return;
@@ -3582,12 +3617,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         loadTrack(autoPlay);
     }
 
-    // ── Lecture d'un album : la file est le contenu exact de l'album (en
-    // ordre ou mélangé entre eux), suivie d'une continuation contextuelle
-    // générée (buildContextualBatch, seedée sur le dernier morceau de
-    // l'album) pour que la musique continue au lieu de s'arrêter. Le mode
-    // repeat-queue ne boucle que sur les pistes de l'album (loopBoundary),
-    // jamais sur la continuation — voir nextTrack().
+    // ── Album playback: the queue is the album's exact content (in
+    // order or shuffled among themselves), followed by a generated contextual
+    // continuation (buildContextualBatch, seeded on the album's last
+    // track) so the music keeps going instead of stopping. Repeat-queue
+    // mode only loops over the album's tracks (loopBoundary),
+    // never over the continuation — see nextTrack().
     async function buildFixedQueueWithContinuation(contextTracks, opts = {}) {
         const { startId = null, autoPlay = true } = opts;
         if (!contextTracks.length) return;
@@ -3609,8 +3644,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         } else {
             currentIndex = 0;
         }
-        // Cf. buildDynamicQueue : empêche refillQueueIfNeeded (déclenché par
-        // loadTrack) de tourner en parallèle du lot de continuation ci-dessous.
+        // See buildDynamicQueue: prevents refillQueueIfNeeded (triggered by
+        // loadTrack) from running in parallel with the continuation batch below.
         queueBatchInFlight = true;
         loadTrack(autoPlay);
 
@@ -3636,10 +3671,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         buildFixedQueueWithContinuation(albumTracks, { autoPlay: true });
     }
 
-    // ── Lecture des morceaux d'un artiste via le bouton "Lecture"/"Mélanger" :
-    // même logique que playAlbum — son catalogue d'abord (mélangé entre eux
-    // si demandé), puis une continuation contextuelle générée une fois
-    // épuisé, au lieu d'un mélange "radio" dès le départ.
+    // ── Playing an artist's tracks via the "Play"/"Shuffle" button:
+    // same logic as playAlbum — their catalog first (shuffled among themselves
+    // if requested), then a generated contextual continuation once
+    // exhausted, instead of a "radio" mix right from the start.
     function playArtist(artistName, forceShuffle = null) {
         if (!artistName) return;
         const norm = artistName.trim().toLowerCase();
@@ -3653,10 +3688,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         buildFixedQueueWithContinuation(artistTracks, { autoPlay: true });
     }
 
-    // ── Comptage des écoutes : une piste n'est comptée (play_count +
-    // listen_history) qu'après MIN_LISTEN_SECONDS de lecture réelle. Le temps
-    // est cumulé à partir des deltas de timeupdate ; un saut de plus d'une
-    // seconde (seek dans la barre de progression) n'est pas compté.
+    // ── Listen counting: a track is only counted (play_count +
+    // listen_history) after MIN_LISTEN_SECONDS of actual playback. Time
+    // is accumulated from timeupdate deltas; a jump of more than one
+    // second (seeking in the progress bar) is not counted.
     const MIN_LISTEN_SECONDS = 5;
     let listenTrack = null, listenSeconds = 0, listenLastTime = 0, listenCounted = false;
 
@@ -3732,9 +3767,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
     function nextTrack() {
         if (loopMode === 2) { audio.currentTime = 0; audio.play(); return; }
-        // En mode "repeat queue", un contexte avec continuation (album) ne
-        // doit reboucler que sur ses propres pistes (loopBoundary), jamais
-        // sur la continuation générée ajoutée après — cf. buildFixedQueueWithContinuation.
+        // In "repeat queue" mode, a context with a continuation (album) must
+        // only loop over its own tracks (loopBoundary), never
+        // over the generated continuation appended after — see buildFixedQueueWithContinuation.
         const effectiveLength = (loopMode === 1 && loopBoundary != null) ? loopBoundary : queue.length;
         if (currentIndex < effectiveLength - 1) { currentIndex++; loadTrack(true); }
         else if (loopMode === 1) { currentIndex = 0; loadTrack(true); }
@@ -3742,12 +3777,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             audio.pause(); audio.currentTime = 0;
         }
     }
-    // ── Bouton/touche "précédent" façon Spotify/YouTube Music : dans les 5
-    // premières secondes d'un morceau, il agit vraiment comme "précédent" (on
-    // remonte dans la file) ; passé ce délai, on considère que l'utilisateur
-    // veut réécouter le morceau en cours plutôt que sauter au précédent —
-    // il revient donc juste à 0. S'il n'y a pas de morceau précédent (déjà au
-    // tout début de la file), on retombe aussi sur un simple retour à 0.
+    // ── Spotify/YouTube Music-style "previous" button/key: within the first 5
+    // seconds of a track, it really acts as "previous" (we
+    // go back in the queue); after that, we assume the user
+    // wants to replay the current track rather than skip to the previous one —
+    // so it just goes back to 0. If there is no previous track (already at the
+    // very start of the queue), we also fall back to simply going back to 0.
     const PREV_TRACK_RESTART_THRESHOLD = 5;
     function prevTrack() {
         if (audio.currentTime >= PREV_TRACK_RESTART_THRESHOLD || currentIndex <= 0) {
@@ -3758,11 +3793,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         loadTrack(true);
     }
 
-    // Sans ces gestionnaires, les touches média précédent/suivant (clavier,
-    // écouteurs Bluetooth, notification média du système) ne font
-    // strictement rien : contrairement à lecture/pause, un navigateur n'a pas
-    // de comportement par défaut pour previoustrack/nexttrack tant qu'aucun
-    // gestionnaire n'est enregistré — ce n'était pas branché du tout avant.
+    // Without these handlers, the previous/next media keys (keyboard,
+    // Bluetooth headphones, system media notification) do
+    // absolutely nothing: unlike play/pause, a browser has no
+    // default behavior for previoustrack/nexttrack as long as no
+    // handler is registered — this wasn't wired up at all before.
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('previoustrack', prevTrack);
         navigator.mediaSession.setActionHandler('nexttrack', nextTrack);
@@ -3775,9 +3810,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         if (audio.paused) audio.play(); else audio.pause();
     }
 
-    // Raccourcis clavier lecture/pause façon YouTube/Spotify (Espace ou K),
-    // désactivés pendant la saisie de texte pour ne pas gêner la recherche,
-    // les formulaires de modale, etc.
+    // YouTube/Spotify-style play/pause keyboard shortcuts (Space or K),
+    // disabled while typing text so they don't interfere with search,
+    // modal forms, etc.
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         if (e.key !== ' ' && e.key.toLowerCase() !== 'k') return;
@@ -3793,20 +3828,20 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         document.getElementById('shuffleBtn').classList.toggle('active', isShuffle);
         document.getElementById('fp-shuffleBtn').classList.toggle('active', isShuffle);
         if (queue.length) {
-            // Le morceau en cours (et tout ce qui a déjà été joué avant lui)
-            // ne doit jamais bouger quand on (dé)active le mélange — seul ce
-            // qui reste à venir est réordonné. Reshuffle l'intégralité de la
-            // file (comme avant) déplaçait le morceau en cours n'importe où
-            // dedans, donnant l'impression qu'il "descendait" dans la file.
+            // The current track (and everything already played before it)
+            // must never move when shuffle is toggled — only what's
+            // still upcoming is reordered. Reshuffling the entire
+            // queue (as before) moved the current track anywhere
+            // in it, making it look like it "slid down" the queue.
             const played = queue.slice(0, currentIndex + 1);
             const upcomingIds = new Set(queue.slice(currentIndex + 1).map(t => t.id));
-            // Repart de l'ordre canonique (originalQueue) pour la portion à
-            // venir : un aller-retour mélangé→normal→mélangé retombe sur un
-            // ordre cohérent plutôt que de composer les mélanges entre eux.
+            // Starts again from the canonical order (originalQueue) for the upcoming
+            // portion: a shuffled→normal→shuffled round trip lands on a
+            // consistent order rather than compounding shuffles on top of each other.
             const upcomingCanonical = originalQueue.filter(t => upcomingIds.has(t.id));
-            // Un vrai mélange (Fisher-Yates) plutôt qu'un simple ré-affichage
-            // trié par popularité, avec une passe anti-répétition d'artiste :
-            // cf. règle 8 (le shuffle doit vraiment sembler mélangé).
+            // A real shuffle (Fisher-Yates) rather than just re-displaying
+            // sorted by popularity, with an anti-artist-repeat pass:
+            // see rule 8 (shuffle must really feel shuffled).
             const upcoming = isShuffle ? weightedAntiRepeatShuffle(upcomingCanonical) : upcomingCanonical;
             queue = [...played, ...upcoming];
             updateQueueUI();
@@ -3901,7 +3936,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         openModal('editTrackModal');
     }
 
-    // ── Suppression piste / playlist (via api.php) ──────────────
+    // ── Track / playlist deletion (via api.php) ──────────────────
     async function deleteTrack(id) {
         if (!confirm(t('confirm_delete_track'))) return;
         const res = await apiCall('delete_track', { track_id: id });
@@ -3940,7 +3975,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         alert(res.message || t('err_upload'));
     }
 
-    // ── Édition piste (via api.php) ──────────────────────────────
+    // ── Track editing (via api.php) ──────────────────────────────
     async function handleEditTrackSubmit(e) {
         e.preventDefault();
         const fd = new FormData();
@@ -3957,11 +3992,11 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     }
 
     // ── Playlists (via api.php) ───────────────────────────────────
-    // playlistModal sert à deux choses : créer un mix (mode 'create', avec
-    // nom + visibilité + sélection initiale) ou ajouter des titres à une
-    // playlist déjà ouverte (mode 'add-songs', déclenché depuis le bouton
-    // "Ajouter" de la page playlist — le renommage et le retrait de titres
-    // se font désormais en place sur cette page, plus besoin de modale).
+    // playlistModal serves two purposes: creating a mix ('create' mode, with
+    // name + visibility + initial selection) or adding songs to an
+    // already open playlist ('add-songs' mode, triggered from the
+    // playlist page's "Add" button — renaming and removing songs
+    // are now done in place on that page, no modal needed anymore).
     let playlistModalMode = 'create';
 
     async function handlePlaylistSubmit(e) {
@@ -4004,9 +4039,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         }
     }
 
-    // En mode "add-songs", les titres déjà présents dans la playlist restent
-    // masqués même hors recherche : on ne peut qu'ajouter, jamais retirer,
-    // depuis cette modale (le ✕ de la page playlist s'en charge).
+    // In "add-songs" mode, songs already in the playlist stay
+    // hidden even outside of search: you can only add, never remove,
+    // from this modal (the playlist page's ✕ handles that).
     function filterPlaylistTracks() {
         const term = document.getElementById('playlist-search').value.toLowerCase();
         const existingIds = (playlistModalMode === 'add-songs' && currentViewedPlaylist)
@@ -4042,9 +4077,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         updateSelectedCount(); openModal('playlistModal');
     }
 
-    // ── Ajout de titres à la playlist actuellement ouverte : les titres déjà
-    // présents sont pré-masqués par filterPlaylistTracks(), donc tout ce qui
-    // est coché ici est forcément nouveau.
+    // ── Adding songs to the currently open playlist: songs already
+    // present are pre-hidden by filterPlaylistTracks(), so everything
+    // checked here is necessarily new.
     function openAddSongModal() {
         if (!currentViewedPlaylist) return;
         playlistModalMode = 'add-songs';
@@ -4059,8 +4094,8 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     }
 
     // ===========================================================
-    //  ÉGALISEUR (Web Audio API) — équivalent web du 5-band EQ +
-    //  bass boost du client Android (EqualizerManager.kt).
+    //  EQUALIZER (Web Audio API) — web equivalent of the 5-band EQ +
+    //  bass boost of the Android client (EqualizerManager.kt).
     // ===========================================================
     let audioCtx = null, eqNodes = null;
     const EQ_BANDS = [
@@ -4128,9 +4163,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     }
 
     // ===========================================================
-    //  THÈMES (préréglages du client Android — ThemeUtils.kt porté
-    //  en JS). Un simple thème "de base" génère panneau/accent/
-    //  bordures/texte via les mêmes formules HSL.
+    //  THEMES (presets from the Android client — ThemeUtils.kt ported
+    //  to JS). A single "base" color generates panel/accent/
+    //  borders/text using the same HSL formulas.
     // ===========================================================
     const THEME_PRESETS = [
         { name: t('theme_site_default'), base: null },
@@ -4192,25 +4227,25 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         const { r, g, b } = hexToRgb(hex);
         let [h, s, l] = rgbToHsl(r, g, b);
         const light = l > 0.5;
-        // Base sans teinte franche (AMOLED, White Mode, gris, pochette
-        // désaturée en thème adaptatif...) : l'accent reste neutre lui aussi
-        // plutôt que de retomber sur une teinte arbitraire — l'ancien code
-        // forçait le violet ici, ce qui le faisait réapparaître dans des
-        // thèmes qui ne devraient contenir aucune trace de violet.
+        // Base with no clear hue (AMOLED, White Mode, grey, desaturated
+        // cover in adaptive mode...): the accent stays neutral too rather
+        // than falling back to an arbitrary hue — the old code forced
+        // purple here, which made it reappear in themes that should
+        // contain no trace of purple.
         if (s < 0.08) return light ? '#3a3a3a' : '#ffffff';
         if (light) { s = clamp(s + 0.5, 0.6, 1.0); l = clamp(l - 0.4, 0.3, 0.5); }
         else       { s = clamp(s + 0.4, 0.5, 0.9); l = clamp(l + 0.5, 0.6, 0.85); }
         return rgbToHex(...hslToRgb(h, s, l));
     }
-    // --primary sert de fond de bouton avec du texte blanc dessus (.btn-primary),
-    // contrairement à --accent qui sert de texte/icône SUR le fond sombre — deux
-    // rôles opposés qu'on ne peut pas partager. deriveAccent pousse volontiers vers
-    // des teintes claires (jusqu'à l=0.85, voire blanc pur sur AMOLED) pour rester
-    // lisible sur un fond noir ; ce même ton clair rendrait le texte blanc des
-    // boutons illisible. derivePrimary vise donc toujours une teinte assez sombre
-    // pour du texte blanc — vérifié via un vrai calcul de contraste WCAG plutôt
-    // qu'une luminosité fixe, car certaines teintes (teal, vert) restent "claires"
-    // à l'œil même à une luminosité HSL modérée.
+    // --primary is used as a button background with white text on top (.btn-primary),
+    // unlike --accent which is used as text/icon ON the dark background — two
+    // opposite roles that cannot be shared. deriveAccent readily pushes toward
+    // light tones (up to l=0.85, or even pure white on AMOLED) to stay readable
+    // on a black background; that same light tone would make white button text
+    // unreadable. derivePrimary therefore always targets a tone dark enough for
+    // white text — checked with a real WCAG contrast computation rather than a
+    // fixed lightness, since some hues (teal, green) still look "light" to the
+    // eye even at a moderate HSL lightness.
     function relLuminance(hex) {
         const { r, g, b } = hexToRgb(hex);
         const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
@@ -4223,9 +4258,9 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     function derivePrimary(hex) {
         const { r, g, b } = hexToRgb(hex);
         let [h, s] = rgbToHsl(r, g, b);
-        // Même logique que deriveAccent : une base sans teinte franche donne
-        // un primary neutre (gris), jamais une teinte arbitraire plaquée
-        // dessus (l'ancien code forçait le violet via h=270 ici).
+        // Same logic as deriveAccent: a base with no clear hue gives a
+        // neutral (grey) primary, never an arbitrary hue forced onto it
+        // (the old code forced purple via h=270 here).
         const neutral = s < 0.08;
         s = neutral ? 0 : clamp(Math.max(s, 0.45), 0.45, 0.85);
         let l = 0.42;
@@ -4257,9 +4292,42 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         s = clamp(s * 0.5, 0, 1); l = light ? 0.4 : 0.7;
         return rgbToHex(...hslToRgb(h, s, l));
     }
+    // Status color (red = danger) tinted to fit the theme:
+    // the hue stays recognisably red but leans slightly toward the
+    // theme's own hue, saturation follows the theme (soft on neutral themes
+    // like AMOLED/White Mode, richer on colorful ones), and lightness is
+    // pushed until the text stays readable (WCAG 4.5:1) on the background.
+    function deriveStatus(hex, targetHue) {
+        const { r, g, b } = hexToRgb(hex);
+        const [h, s, bgL] = rgbToHsl(r, g, b);
+        const light = bgL > 0.5;
+        const neutral = s < 0.08;
+        let hue = targetHue;
+        if (!neutral) {
+            let diff = h - hue;
+            if (diff > 180) diff -= 360;
+            if (diff < -180) diff += 360;
+            hue = (hue + clamp(diff * 0.2, -8, 8) + 360) % 360;
+        }
+        const sat = neutral ? 0.6 : clamp(s * 0.5 + 0.45, 0.55, 0.85);
+        let l = light ? 0.42 : 0.66;
+        let candidate = rgbToHex(...hslToRgb(hue, sat, l));
+        while (l > 0.1 && l < 0.9 && contrastRatio(hex, candidate) < 4.5) {
+            l += light ? -0.02 : 0.02;
+            candidate = rgbToHex(...hslToRgb(hue, sat, l));
+        }
+        return candidate;
+    }
+    function applyStatusColors(baseHex) {
+        const style = document.documentElement.style;
+        const danger = deriveStatus(baseHex, 355);
+        const { r, g, b } = hexToRgb(danger);
+        style.setProperty('--danger', danger);
+        style.setProperty('--danger-rgb', `${r},${g},${b}`);
+    }
     function deriveText(hex) { const { r, g, b } = hexToRgb(hex); const [, , l] = rgbToHsl(r, g, b); return l > 0.5 ? '#1a1a1b' : '#e0e0e0'; }
-    // Surface "élevée" à N crans de l'arrière-plan (inputs, hover, focus…) —
-    // mêmes crans que derivePanel (2) mais paramétrable pour les autres surfaces.
+    // "Elevated" surface N steps away from the background (inputs, hover, focus…) —
+    // same steps as derivePanel (2) but configurable for other surfaces.
     function deriveElevated(hex, steps) {
         const { r, g, b } = hexToRgb(hex);
         let [h, s, l] = rgbToHsl(r, g, b);
@@ -4268,14 +4336,17 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         return rgbToHex(...hslToRgb(h, s, l));
     }
 
-    const THEME_VARS = ['--bg-dark','--bg-panel','--primary','--accent','--primary-rgb','--accent-rgb','--text','--text-muted','--border-color','--border-color-rgb','--search-bg','--header-bg','--mob-nav-bg','--player-bg','--fp-gradient-1','--fp-gradient-2','--modal-bg','--input-bg','--elevated-bg','--player-text'];
-    // Applique les variables CSS calculées à partir d'une couleur de base, sans
-    // toucher au localStorage — utilisé aussi bien par un thème statique choisi
-    // par l'utilisateur que par le mode adaptatif (une couleur par morceau).
+    const THEME_VARS = ['--bg-dark','--bg-panel','--primary','--accent','--primary-rgb','--accent-rgb','--text','--text-muted','--border-color','--border-color-rgb','--search-bg','--header-bg','--mob-nav-bg','--player-bg','--fp-gradient-1','--fp-gradient-2','--modal-bg','--input-bg','--elevated-bg','--player-text','--danger','--danger-rgb'];
+    // Applies the CSS variables computed from a base color, without touching
+    // localStorage — used both by a static theme chosen by the user and by
+    // adaptive mode (one color per track).
     function applyThemeColors(baseHex, gradient2Hex) {
         const style = document.documentElement.style;
         if (!baseHex) {
             THEME_VARS.forEach(v => style.removeProperty(v));
+            // Site theme: tint the status colors from the admin-chosen background.
+            const siteBg = getComputedStyle(document.documentElement).getPropertyValue('--bg-dark').trim();
+            if (/^#[0-9a-f]{3,6}$/i.test(siteBg)) applyStatusColors(siteBg);
             return;
         }
         const panel    = derivePanel(baseHex);
@@ -4309,6 +4380,7 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         style.setProperty('--input-bg', inputBg);
         style.setProperty('--elevated-bg', elevated);
         style.setProperty('--player-text', text);
+        applyStatusColors(baseHex);
     }
     function applyTheme(baseHex) {
         adaptiveThemeEnabled = false;
@@ -4317,12 +4389,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         else localStorage.removeItem('theme_base');
         renderThemeSwatches();
     }
-    // --- Thème adaptatif : palette extraite de la pochette de la piste en cours ---
-    // On échantillonne toute l'image (pas un seul pixel), on regroupe les pixels
-    // proches en "spots" de couleur (quantification), puis on note chaque spot
-    // contre plusieurs profils cible (vif/doux × clair/normal/sombre — même
-    // principe que l'Android Palette API) pour choisir des couleurs réellement
-    // représentatives plutôt qu'un pixel isolé qui pourrait être un artefact.
+    // --- Adaptive theme: palette extracted from the current track's cover ---
+    // We sample the whole image (not a single pixel), group nearby pixels into
+    // color "spots" (quantization), then score each spot against several target
+    // profiles (vibrant/muted × light/normal/dark — same principle as the
+    // Android Palette API) to pick truly representative colors rather than an
+    // isolated pixel that could be an artifact.
     const PALETTE_TARGETS = [
         { name: 'vibrant',      minS: 0.35, targetS: 1.0, minL: 0.30, targetL: 0.50, maxL: 0.70 },
         { name: 'lightVibrant', minS: 0.35, targetS: 1.0, minL: 0.55, targetL: 0.74, maxL: 1.00 },
@@ -4337,22 +4409,22 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             img.crossOrigin = 'anonymous';
             img.onload = () => {
                 try {
-                    const size = 100; // plus de pixels échantillonnés = moyennes de seaux moins bruitées
+                    const size = 100; // more sampled pixels = less noisy bucket averages
                     const canvas = document.createElement('canvas');
                     canvas.width = size; canvas.height = size;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, size, size);
                     const data = ctx.getImageData(0, 0, size, size).data;
-                    // Seaux plus fins (16 au lieu de 24) : une pochette avec un rouge et un
-                    // orange proches ne doit pas être moyennée en un seul brun qui n'existe
-                    // dans aucun des deux — la teinte choisie doit rester fidèle à l'image.
+                    // Finer buckets (16 instead of 24): a cover with a close red and
+                    // orange must not be averaged into a single brown that exists in
+                    // neither — the chosen hue must stay true to the image.
                     const QUANT = 16;
                     const buckets = new Map();
                     for (let i = 0; i < data.length; i += 4) {
                         const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
                         if (a < 200) continue;
                         const [, , l] = rgbToHsl(r, g, b);
-                        if (l < 0.03 || l > 0.97) continue; // ignore le noir/blanc pur (bords, letterbox)
+                        if (l < 0.03 || l > 0.97) continue; // skip pure black/white (borders, letterbox)
                         const key = Math.round(r / QUANT) + '_' + Math.round(g / QUANT) + '_' + Math.round(b / QUANT);
                         let bucket = buckets.get(key);
                         if (!bucket) { bucket = { count: 0, r: 0, g: 0, b: 0 }; buckets.set(key, bucket); }
@@ -4365,27 +4437,27 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
                         return { hex: rgbToHex(r, g, b), count: c.count, s, l };
                     });
                     const totalPixels = allClusters.reduce((sum, c) => sum + c.count, 0);
-                    // On ne garde que les spots réellement présents dans l'image (au moins ~1.5%
-                    // des pixels valides) avant de matcher les profils cible : sinon un pixel isolé
-                    // qui "colle" bien à un profil (ex: un minuscule reflet très saturé) pouvait
-                    // être choisi alors qu'il est quasi invisible à l'œil sur la pochette.
-                    // Seuil abaissé (1.5% → 1%) car des seaux plus fins (QUANT=16 au lieu
-                    // de 24) répartissent naturellement les pixels sur davantage de seaux —
-                    // sans cet ajustement, des teintes qui qualifiaient avant repasseraient
-                    // artificiellement sous le seuil.
+                    // Only keep spots actually present in the image (at least ~1.5% of
+                    // valid pixels) before matching target profiles: otherwise an isolated
+                    // pixel that fits a profile well (e.g. a tiny, very saturated highlight)
+                    // could be picked even though it is nearly invisible on the cover.
+                    // Threshold lowered (1.5% → 1%) because finer buckets (QUANT=16 instead
+                    // of 24) naturally spread pixels over more buckets — without this
+                    // adjustment, hues that used to qualify would artificially fall back
+                    // under the threshold.
                     const MIN_POPULATION_FRACTION = 0.01;
                     const dominant = allClusters.reduce((a, b) => (b.count > a.count ? b : a));
                     const clusters = allClusters
                         .filter(c => c.count / totalPixels >= MIN_POPULATION_FRACTION)
                         .sort((a, b) => b.count - a.count);
                     const maxPop = clusters.length ? clusters[0].count : dominant.count;
-                    // Aligné sur les poids réels de l'Android Palette API (dont ce code
-                    // reprend le principe) : la fidélité à la teinte/luminosité cible du
-                    // profil (vibrant/muted × clair/normal/sombre) doit largement dominer
-                    // la popularité — l'ancien réglage (POP=5 > LUMA=3 > SAT=2) faisait
-                    // essentiellement "prendre le seau le plus fréquent qui passe le seuil",
-                    // souvent un aplat de fond terne, plutôt que la vraie couleur d'accent
-                    // que l'œil identifierait sur la pochette.
+                    // Aligned with the actual weights of the Android Palette API (whose
+                    // principle this code follows): matching the profile's target
+                    // hue/lightness (vibrant/muted × light/normal/dark) must largely
+                    // outweigh popularity — the old setting (POP=5 > LUMA=3 > SAT=2)
+                    // essentially meant "take the most frequent bucket above the threshold",
+                    // often a dull flat background, rather than the real accent color the
+                    // eye would pick out on the cover.
                     const WEIGHT_SAT = 3, WEIGHT_LUMA = 6.5, WEIGHT_POP = 1;
                     const scoreFor = (target, c) => {
                         if (c.l < target.minL || c.l > target.maxL || c.s < target.minS) return -Infinity;
@@ -4413,10 +4485,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             img.src = imgSrc;
         });
     }
-    // Plafonne saturation/luminosité d'une couleur extraite pour éviter qu'un
-    // spot très saturé (ex: rouge vif, orange néon) devienne le fond de toute
-    // l'appli une fois utilisé comme --bg-dark — le thème adaptatif doit rester
-    // sombre et discret, jamais criard, quelle que soit la pochette.
+    // Caps the saturation/lightness of an extracted color so that a very
+    // saturated spot (e.g. bright red, neon orange) doesn't become the whole
+    // app's background once used as --bg-dark — the adaptive theme must stay
+    // dark and subtle, never garish, whatever the cover.
     function tameAdaptiveColor(hex, maxS, maxL) {
         const { r, g, b } = hexToRgb(hex);
         let [h, s, l] = rgbToHsl(r, g, b);
@@ -4424,10 +4496,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         l = Math.min(l, maxL);
         return rgbToHex(...hslToRgb(h, s, l));
     }
-    // Combine deux spots de la palette : un ton sombre et discret comme base du
-    // thème (contrôle panneau/texte/contraste via applyThemeColors), et un ton
-    // un peu plus vif comme second point du dégradé ambiant du lecteur plein
-    // écran (déjà assombri par le filtre CSS brightness(.55) qui le recouvre).
+    // Combines two palette spots: a dark, subtle tone as the theme base
+    // (drives panel/text/contrast via applyThemeColors), and a slightly more
+    // vivid tone as the second stop of the fullscreen player's ambient
+    // gradient (already darkened by the CSS brightness(.55) filter on top).
     function paletteToTheme(palette) {
         if (!palette) return null;
         const rawBase = palette.darkMuted || palette.darkVibrant || palette.muted || palette.vibrant || palette.dominant;
@@ -4437,27 +4509,57 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         return { base, gradient2 };
     }
     function updateAdaptiveTheme(track) {
-        if (!adaptiveThemeEnabled || !track || !track.cover_url) return;
+        if (!adaptiveThemeEnabled) return;
+        if (adaptiveIdle) { applyAdaptiveFallback(); return; }
+        // No cover to read: use the site theme, like a failed extraction.
+        if (!track || !track.cover_url) { applyThemeColors(null); return; }
         const key = track.cover_url;
         const cached = adaptiveColorCache.get(key);
         if (cached) { applyThemeColors(cached.base, cached.gradient2); return; }
         extractPalette(key).then(palette => {
-            // Si l'extraction échoue, retomber sur le thème du site (base:
-            // null) plutôt que sur une couleur arbitraire — sinon l'ancien
-            // violet de secours réapparaissait dans un thème pourtant
-            // supposé suivre la pochette en cours.
+            // If extraction fails, fall back to the site theme (base: null)
+            // rather than an arbitrary color — otherwise the old purple
+            // fallback would reappear in a theme that is supposed to follow
+            // the current cover.
             const theme = paletteToTheme(palette) || { base: null, gradient2: null };
             adaptiveColorCache.set(key, theme);
             const current = queue[currentIndex];
-            if (adaptiveThemeEnabled && current && current.cover_url === key) applyThemeColors(theme.base, theme.gradient2);
-        }).catch(() => {});
+            if (adaptiveThemeEnabled && !adaptiveIdle && current && current.cover_url === key) applyThemeColors(theme.base, theme.gradient2);
+        }).catch(() => {
+            // Cover failed to load: same site-theme fallback as above, so the
+            // idle default theme never lingers while a song is playing.
+            adaptiveColorCache.set(key, { base: null, gradient2: null });
+            const current = queue[currentIndex];
+            if (adaptiveThemeEnabled && !adaptiveIdle && current && current.cover_url === key) applyThemeColors(null);
+        });
     }
     function enableAdaptiveTheme() {
         adaptiveThemeEnabled = true;
         localStorage.setItem('theme_base', 'adaptive');
         const track = queue[currentIndex];
-        if (track) updateAdaptiveTheme(track); else applyThemeColors(null);
+        if (track && !adaptiveIdle) updateAdaptiveTheme(track); else applyAdaptiveFallback();
         renderThemeSwatches();
+    }
+    // --- Default adaptive theme: only used while adaptive mode is on and no
+    // song has started playing yet this session (see adaptiveIdle). Once a song
+    // plays, the cover always drives the theme. Stored separately
+    // from 'theme_base' so it survives switching themes back and forth.
+    function getAdaptiveFallback() {
+        return localStorage.getItem('theme_adaptive_fallback') || null;
+    }
+    function applyAdaptiveFallback() {
+        applyThemeColors(getAdaptiveFallback());
+    }
+    function setAdaptiveFallback(baseHex) {
+        if (baseHex) localStorage.setItem('theme_adaptive_fallback', baseHex);
+        else localStorage.removeItem('theme_adaptive_fallback');
+        if (adaptiveThemeEnabled && adaptiveIdle) applyAdaptiveFallback();
+        renderThemeSwatches();
+    }
+    function swatchBackground(base) {
+        return base === 'adaptive'
+            ? 'conic-gradient(from 180deg,#ff5f6d,#ffc371,#4ecdc4,#556fff,#ff5f6d)'
+            : (base || `linear-gradient(135deg,${SERVER_PRIMARY},${SERVER_ACCENT})`);
     }
     function renderThemeSwatches() {
         const grid = document.getElementById('theme-swatch-grid');
@@ -4468,25 +4570,41 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             const isActive = p.base === savedBase || (p.base === null && !savedBase);
             const div = document.createElement('div');
             div.className = 'theme-swatch' + (isActive ? ' active' : '');
-            const bg = p.base === 'adaptive'
-                ? 'conic-gradient(from 180deg,#ff5f6d,#ffc371,#4ecdc4,#556fff,#ff5f6d)'
-                : (p.base || `linear-gradient(135deg,${SERVER_PRIMARY},${SERVER_ACCENT})`);
-            div.innerHTML = `<div class="swatch-circle" style="background:${bg};"></div><span>${escapeHTML(p.name)}</span>`;
+            div.innerHTML = `<div class="swatch-circle" style="background:${swatchBackground(p.base)};"></div><span>${escapeHTML(p.name)}</span>`;
             div.onclick = () => p.base === 'adaptive' ? enableAdaptiveTheme() : applyTheme(p.base);
+            grid.appendChild(div);
+        });
+        renderAdaptiveFallbackSwatches(savedBase === 'adaptive');
+    }
+    // Second picker, only shown while adaptive mode is active: lists every
+    // static preset (not 'adaptive' itself) to choose the idle theme.
+    function renderAdaptiveFallbackSwatches(visible) {
+        const section = document.getElementById('adaptive-fallback-section');
+        const grid = document.getElementById('adaptive-fallback-grid');
+        if (!section || !grid) return;
+        section.style.display = visible ? '' : 'none';
+        if (!visible) return;
+        const fallback = getAdaptiveFallback();
+        grid.innerHTML = '';
+        THEME_PRESETS.filter(p => p.base !== 'adaptive').forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'theme-swatch' + (p.base === fallback ? ' active' : '');
+            div.innerHTML = `<div class="swatch-circle" style="background:${swatchBackground(p.base)};"></div><span>${escapeHTML(p.name)}</span>`;
+            div.onclick = () => setAdaptiveFallback(p.base);
             grid.appendChild(div);
         });
     }
 
     // ===========================================================
-    //  PAROLES SYNCHRONISÉES (lrclib.net — comme AppViewModel.kt)
+    //  SYNCED LYRICS (lrclib.net — like AppViewModel.kt)
     // ===========================================================
     let lyricsVisible = false;
     let currentParsedLyrics = [];
     let lyricsRequestId = 0;
     let currentFpTab = 'queue';
 
-    // Panneau latéral du lecteur plein écran (File d'attente / Paroles),
-    // façon YouTube Music : un seul panneau, deux onglets.
+    // Fullscreen player side panel (Queue / Lyrics),
+    // YouTube Music style: a single panel, two tabs.
     function openFpTab(tab) {
         currentFpTab = tab;
         document.getElementById('fp-sidebar').classList.add('open');
@@ -4539,19 +4657,19 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
             return;
         }
         currentParsedLyrics = parsed;
-        // Contrairement à fixEntities() utilisé pour les titres/artistes, les paroles
-        // gardent le symbole "&" littéral plutôt que le mot "and"/"et" : remplacer un
-        // "&" par un mot en pleine phrase de chanson en altérerait le texte original.
+        // Unlike fixEntities() used for titles/artists, lyrics
+        // keep the literal "&" symbol rather than the word "and"/"et": replacing a
+        // "&" with a word in the middle of a song line would alter the original text.
         panel.innerHTML = parsed.map(l => `<p class="lyric-line" data-time="${l.time}" onclick="seekLyric(${l.time})">${escapeHTML(fixEntitiesLiteral(l.text))}</p>`).join('');
         resetLyricsScroll();
     }
 
-    // Remet le panneau en haut après un changement de morceau. Le forçage au
-    // début de fetchLyrics() (avant même le fetch réseau) coupe court à un
-    // éventuel scroll fluide encore en cours vers les dernières lignes du
-    // morceau précédent ; ce second passage, après la mise à jour du DOM et
-    // sur une frame suivante, rattrape les cas où le navigateur recadre le
-    // scroll après coup (scroll anchoring, reflow du backdrop-filter, etc.).
+    // Scrolls the panel back to the top after a track change. Forcing it at the
+    // start of fetchLyrics() (even before the network fetch) cuts short any
+    // smooth scroll still in progress toward the last lines of the
+    // previous track; this second pass, after the DOM update and
+    // on a later frame, catches cases where the browser re-adjusts the
+    // scroll afterwards (scroll anchoring, backdrop-filter reflow, etc.).
     function resetLyricsScroll() {
         const sidebarContent = document.querySelector('.fp-sidebar-content');
         if (sidebarContent) sidebarContent.scrollTop = 0;
@@ -4565,12 +4683,12 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
     async function fetchLyrics(track) {
         const panel = document.getElementById('lyrics-content');
         currentParsedLyrics = [];
-        // Repart du haut du panneau à chaque nouveau morceau : sans ça, si on
-        // avait défilé jusqu'en bas des paroles précédentes (longues) et que
-        // le morceau suivant a des paroles courtes/absentes, la position de
-        // scroll reste sur l'ancienne valeur. Ce premier passage coupe court
-        // à un scroll fluide encore en cours (voir resetLyricsScroll() pour
-        // le second passage, après le rendu du nouveau morceau).
+        // Starts from the top of the panel on every new track: without this, if we
+        // had scrolled to the bottom of the previous (long) lyrics and
+        // the next track has short/missing lyrics, the scroll position
+        // stays at the old value. This first pass cuts short
+        // any smooth scroll still in progress (see resetLyricsScroll() for
+        // the second pass, after the new track is rendered).
         resetLyricsScroll();
         const myReq = ++lyricsRequestId;
         const cacheKey = 'lyrics_' + track.id;
@@ -4579,10 +4697,10 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
 
         panel.innerHTML = `<p class="lyrics-status">${t('loading_lyrics')}</p>`;
         try {
-            // lrclib ne retrouve pas les paroles si artist_name contient plusieurs
-            // artistes reliés par "&"/"and"/"et" (ex: "A & B") : on ne cherche que
-            // sur l'artiste principal, comme splitArtistNames() le fait déjà pour
-            // les liens cliquables.
+            // lrclib doesn't find the lyrics if artist_name contains several
+            // artists joined by "&"/"and"/"et" (e.g. "A & B"): we only search
+            // on the main artist, like splitArtistNames() already does for
+            // clickable links.
             const primaryArtist = splitArtistNames(fixEntities(track.artist || ''))[0] || track.artist || '';
             const cleanTitle = fixEntities(track.title || '');
             const url = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(primaryArtist) + '&track_name=' + encodeURIComponent(cleanTitle);
@@ -4611,22 +4729,22 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         }
         const lines = document.querySelectorAll('#lyrics-content .lyric-line');
         lines.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
-        // On évite volontairement lines[activeIdx].scrollIntoView({block:'center'}) :
-        // quand la ligne active est trop proche du début/fin de la liste pour être
-        // vraiment centrée dans .fp-sidebar-content, Chrome reporte le reste du
-        // défilement demandé sur les conteneurs ancêtres suivants dans la chaîne
-        // (#fp-sidebar puis #full-player, tous deux en overflow:hidden) — ce qui
-        // décale visuellement tout le lecteur plein écran au lieu de rester
-        // confiné au panneau des paroles. On calcule donc le scrollTop cible
-        // nous-mêmes et on l'applique uniquement au panneau via scrollTo().
+        // We deliberately avoid lines[activeIdx].scrollIntoView({block:'center'}):
+        // when the active line is too close to the start/end of the list to be
+        // truly centered in .fp-sidebar-content, Chrome passes the rest of the
+        // requested scroll on to the next ancestor containers in the chain
+        // (#fp-sidebar then #full-player, both overflow:hidden) — which
+        // visually shifts the whole fullscreen player instead of staying
+        // confined to the lyrics panel. So we compute the target scrollTop
+        // ourselves and apply it only to the panel via scrollTo().
         if (activeIdx >= 0 && lines[activeIdx]) {
             const container = document.querySelector('.fp-sidebar-content');
             const el = lines[activeIdx];
             if (container) {
-                // getBoundingClientRect() plutôt que offsetTop : aucun élément entre
-                // .fp-sidebar-content et .lyric-line n'a de position autre que static,
-                // donc offsetTop remonterait jusqu'à #full-player (position:fixed, le
-                // premier ancêtre positionné) au lieu du panneau des paroles.
+                // getBoundingClientRect() rather than offsetTop: no element between
+                // .fp-sidebar-content and .lyric-line has a position other than static,
+                // so offsetTop would climb up to #full-player (position:fixed, the
+                // first positioned ancestor) instead of the lyrics panel.
                 const elRect = el.getBoundingClientRect();
                 const containerRect = container.getBoundingClientRect();
                 const elTopInContainer = (elRect.top - containerRect.top) + container.scrollTop;
@@ -4638,13 +4756,13 @@ foreach ($all_tracks as $t) $tracksById[(string)$t['id']] = $t;
         }
     }
 
-    // Garde-fou : #full-player, #fp-sidebar et .fp-body n'ont jamais de raison
-    // légitime de défiler (tout leur contenu tient dans leur zone, seul
-    // .fp-sidebar-content est fait pour défiler) ; on force donc leur
-    // scrollTop à 0 après chaque manipulation de scroll dans le panneau des
-    // paroles, au cas où le navigateur y reporterait malgré tout un reliquat
-    // de défilement (ce qui décale visuellement tout le lecteur et cache le
-    // reste de l'UI) — quelle qu'en soit la cause exacte selon le moteur.
+    // Safeguard: #full-player, #fp-sidebar and .fp-body never have a
+    // legitimate reason to scroll (all their content fits in their area, only
+    // .fp-sidebar-content is meant to scroll); so we force their
+    // scrollTop to 0 after every scroll manipulation in the lyrics
+    // panel, in case the browser still passes some leftover
+    // scroll onto them (which visually shifts the whole player and hides the
+    // rest of the UI) — whatever the exact cause depending on the engine.
     function pinFullPlayerScroll() {
         ['full-player', 'fp-sidebar'].forEach(id => {
             const el = document.getElementById(id);

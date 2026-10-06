@@ -1,12 +1,12 @@
 -- ==========================================================
---  Purple Music / Amethyst Music — Migration 3 : Historique d'écoute
---  À exécuter une seule fois sur une base existante :
+--  Purple Music / Amethyst Music — Migration 3: Listening history
+--  Run only once on an existing database:
 --    mysql -u root -p purple_music < update-db/update-3.sql
 --
---  Base du moteur de recommandation (action=recommend dans api.php) :
---  chaque lecture d'un morceau par un utilisateur connecté est
---  enregistrée ici (voir action=increment_play), puis utilisée pour
---  déduire une affinité de genre/artiste/album pondérée par récence.
+--  Basis of the recommendation engine (action=recommend in api.php):
+--  every playback of a track by a logged-in user is
+--  recorded here (see action=increment_play), then used to
+--  derive a genre/artist/album affinity weighted by recency.
 -- ==========================================================
 
 USE purple_music;
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS `listen_history` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==========================================================
---  FIN — Vérification rapide
+--  END — Quick check
 -- ==========================================================
 
 SELECT 'Migration 3 (historique d''écoute) appliquée avec succès ✔' AS statut;

@@ -1,17 +1,17 @@
 -- ==========================================================
---  Purple Music / Amethyst Music — Migration 1 : Albums
---  À exécuter une seule fois sur une base existante :
+--  Purple Music / Amethyst Music — Migration 1: Albums
+--  Run only once on an existing database:
 --    mysql -u root -p purple_music < update-db/update-1.sql
 --
---  Nécessite MySQL 8.0.29+ ou MariaDB 10.5.2+ (support de
---  "ADD COLUMN IF NOT EXISTS"). Sur une version plus ancienne,
---  retirez le "IF NOT EXISTS" de l'ALTER TABLE ci-dessous après
---  avoir vérifié que la colonne `album_id` n'existe pas déjà.
+--  Requires MySQL 8.0.29+ or MariaDB 10.5.2+ (support for
+--  "ADD COLUMN IF NOT EXISTS"). On an older version,
+--  remove the "IF NOT EXISTS" from the ALTER TABLE below after
+--  checking that the `album_id` column doesn't already exist.
 -- ==========================================================
 
 USE purple_music;
 
--- 1. Table des albums
+-- 1. Albums table
 CREATE TABLE IF NOT EXISTS `albums` (
     `id`            INT UNSIGNED    NOT NULL AUTO_INCREMENT,
     `name`          VARCHAR(255)    NOT NULL,
@@ -21,11 +21,11 @@ CREATE TABLE IF NOT EXISTS `albums` (
     UNIQUE KEY `uq_album_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 2. Rattachement des morceaux à un album (NULL = pas d'album, comportement par défaut)
+-- 2. Attach tracks to an album (NULL = no album, default behavior)
 ALTER TABLE `tracks`
     ADD COLUMN IF NOT EXISTS `album_id` INT UNSIGNED DEFAULT NULL AFTER `genre`;
 
--- 3. Index + clé étrangère (ignorée si déjà présente)
+-- 3. Index + foreign key (skipped if already present)
 ALTER TABLE `tracks`
     ADD KEY IF NOT EXISTS `idx_album` (`album_id`);
 
@@ -46,7 +46,7 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 -- ==========================================================
---  FIN — Vérification rapide
+--  END — Quick check
 -- ==========================================================
 
 SELECT 'Migration 1 (albums) appliquée avec succès ✔' AS statut;
